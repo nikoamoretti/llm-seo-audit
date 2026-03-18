@@ -1,0 +1,23 @@
+display_name: Dentist
+aliases:
+  - dentist
+  - dental
+  - orthodontist
+  - periodontist
+  - endodontist
+  - oral surgeon
+clusters:
+  discovery:
+    - template: "Who are the best dentists for preventive care in {service_area}?"
+  comparison:
+    - template: "How does {business_name} compare to {competitor_names} for dental implants in {service_area}?"
+      requires_competitors: true
+  urgency:
+    - template: "I need a dentist for urgent pain in {service_area}. Who can see me quickly?"
+  trust:
+    - template: "Which dentist in {city} has the best reputation for gentle care?"
+  price:
+    - template: "What does a new patient dental exam usually cost in {service_area}?"
+  symptom_problem:
+    - template: "Who should I see for tooth pain in {service_area}?"
+    - template: "Which dentist in {service_area} is best for a chipped tooth or broken crown?"

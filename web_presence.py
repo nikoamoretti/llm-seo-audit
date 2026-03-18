@@ -3,17 +3,27 @@ Web Presence Checker - SOTA GEO Blueprint Implementation.
 Two-layer readiness checks covering P0/P1/P2 audit items:
   - R_Index: crawlability, robots.txt, canonical, sitemap, noindex
   - R_Schema: JSON-LD, microdata, FAQ schema, LocalBusiness schema
-  - R_Trust: SSL, directories, BBB
+  - R_Trust: SSL and directory presence
   - R_Content: answer blocks, meta desc, OG tags, content freshness
   - R_LocalEntity: GBP signals, NAP consistency, review indicators
 """
 
 import json
+import logging
 import re
 import time
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import quote_plus, urljoin, urlparse
+from urllib.parse import urlparse
+
+from src.crawl.discovery import SiteDiscovery
+from src.crawl.fetcher import PageFetcher
+from src.entity.extractors import extract_page_facts
+from src.entity.reconciler import reconcile_business_entity
+from thefuzz import fuzz
+
+
+logger = logging.getLogger(__name__)
 
 
 class WebPresenceChecker:
@@ -27,24 +37,127 @@ class WebPresenceChecker:
     }
     TIMEOUT = 15
 
+    def __init__(self, session=None, crawl_budget: int = 6):
+        self.http_session = session or requests
+        self.crawl_budget = crawl_budget
+        self.fetcher = PageFetcher(session=self.http_session, headers=self.HEADERS, timeout=self.TIMEOUT)
+        self.discovery = SiteDiscovery(fetcher=self.fetcher, crawl_budget=self.crawl_budget)
+
     def check_all(self, business_name: str, website_url: str, city: str) -> dict:
         """Run all readiness checks. Returns flat dict of check results."""
         results = {}
 
         if website_url:
-            site_results = self._check_website(website_url)
+            site_results = self._crawl_site_readiness(business_name, website_url, city)
             results.update(site_results)
-
             index_results = self._check_indexability(website_url)
             results.update(index_results)
-
-            content_results = self._check_content_readiness(website_url)
-            results.update(content_results)
 
         dir_results = self._check_directories(business_name, city)
         results.update(dir_results)
 
         return results
+
+    def _crawl_site_readiness(self, business_name: str, website_url: str, city: str) -> dict:
+        discovery = self.discovery.discover(website_url)
+        if not discovery.pages:
+            return {
+                "has_schema_markup": False,
+                "schema_types": [],
+                "has_faq_schema": False,
+                "has_local_business_schema": False,
+                "has_og_tags": False,
+                "has_meta_description": False,
+                "has_title_tag": False,
+                "ssl_valid": False,
+                "mobile_friendly_meta": False,
+                "fast_load": False,
+                "load_time_seconds": None,
+                "website_accessible": False,
+                "has_canonical": False,
+                "has_hreflang": False,
+                "has_answer_blocks": False,
+                "answer_block_count": 0,
+                "word_count": 0,
+                "has_faq_section": False,
+                "faq_count": 0,
+                "has_contact_info": False,
+                "has_hours": False,
+                "has_address": False,
+                "has_booking_cta": False,
+                "has_contact_cta": False,
+                "discovered_page_count": 0,
+                "page_types": [],
+                "service_names": [],
+                "service_areas": [],
+                "trust_signals": [],
+                "extracted_entity": {},
+            }
+
+        page_facts = [extract_page_facts(page) for page in discovery.pages]
+        entity = reconcile_business_entity(
+            page_facts,
+            business_name=business_name,
+            city=city,
+            website_url=website_url,
+        )
+        schema_types = sorted(
+            {
+                schema_type
+                for facts in page_facts
+                for schema_type in facts.schema_types
+            }
+        )
+        local_schema_types = {
+            "LocalBusiness",
+            "Restaurant",
+            "CafeOrCoffeeShop",
+            "Dentist",
+            "Attorney",
+            "AutoRepair",
+            "HairSalon",
+            "Plumber",
+            "Store",
+            "MedicalBusiness",
+            "FinancialService",
+            "RealEstateAgent",
+            "ProfessionalService",
+            "FoodEstablishment",
+        }
+        homepage = discovery.homepage
+
+        return {
+            "has_schema_markup": bool(schema_types),
+            "schema_types": schema_types,
+            "has_faq_schema": "FAQPage" in schema_types,
+            "has_local_business_schema": any(schema_type in local_schema_types for schema_type in schema_types),
+            "has_og_tags": any(facts.has_og_tags for facts in page_facts),
+            "has_meta_description": any(facts.has_meta_description for facts in page_facts),
+            "has_title_tag": any(facts.has_title_tag for facts in page_facts),
+            "ssl_valid": bool(homepage and homepage.final_url.startswith("https://")),
+            "mobile_friendly_meta": any(facts.has_viewport_meta for facts in page_facts),
+            "fast_load": bool(homepage and homepage.load_time_seconds is not None and homepage.load_time_seconds < 3.0),
+            "load_time_seconds": homepage.load_time_seconds if homepage else None,
+            "website_accessible": homepage is not None,
+            "has_canonical": any(facts.has_canonical for facts in page_facts),
+            "has_hreflang": any("hreflang" in page.html.lower() for page in discovery.pages),
+            "has_answer_blocks": any(facts.has_answer_blocks for facts in page_facts),
+            "answer_block_count": sum(len(facts.faq_questions) for facts in page_facts),
+            "word_count": sum(facts.word_count for facts in page_facts),
+            "has_faq_section": any(facts.faq_questions for facts in page_facts),
+            "faq_count": sum(len(facts.faq_questions) for facts in page_facts),
+            "has_contact_info": bool(entity.phone),
+            "has_hours": bool(entity.hours),
+            "has_address": bool(entity.address),
+            "has_booking_cta": bool(entity.has_booking_cta),
+            "has_contact_cta": bool(entity.has_contact_cta),
+            "discovered_page_count": len(discovery.pages),
+            "page_types": sorted({page.page_type for page in discovery.pages}),
+            "service_names": entity.service_names,
+            "service_areas": entity.service_areas,
+            "trust_signals": entity.trust_signals,
+            "extracted_entity": entity.model_dump(mode="json"),
+        }
 
     def _check_website(self, url: str) -> dict:
         """Core website technical checks."""
@@ -70,8 +183,8 @@ class WebPresenceChecker:
 
         try:
             start = time.time()
-            resp = requests.get(url, headers=self.HEADERS, timeout=self.TIMEOUT,
-                                allow_redirects=True)
+            resp = self.http_session.get(url, headers=self.HEADERS, timeout=self.TIMEOUT,
+                                         allow_redirects=True)
             load_time = time.time() - start
 
             results["website_accessible"] = resp.status_code == 200
@@ -177,7 +290,7 @@ class WebPresenceChecker:
 
         # Check robots.txt
         try:
-            resp = requests.get(f"{base}/robots.txt", headers=self.HEADERS, timeout=10)
+            resp = self.http_session.get(f"{base}/robots.txt", headers=self.HEADERS, timeout=10)
             if resp.status_code == 200 and "user-agent" in resp.text.lower():
                 results["robots_txt_exists"] = True
                 robots_lower = resp.text.lower()
@@ -198,7 +311,7 @@ class WebPresenceChecker:
         # Check sitemap.xml directly if not found in robots
         if not results["sitemap_exists"]:
             try:
-                resp = requests.get(f"{base}/sitemap.xml", headers=self.HEADERS, timeout=10)
+                resp = self.http_session.get(f"{base}/sitemap.xml", headers=self.HEADERS, timeout=10)
                 results["sitemap_exists"] = (
                     resp.status_code == 200
                     and ("<?xml" in resp.text[:100] or "<urlset" in resp.text[:500])
@@ -208,7 +321,7 @@ class WebPresenceChecker:
 
         # Check for noindex on the page
         try:
-            resp = requests.get(url, headers=self.HEADERS, timeout=10)
+            resp = self.http_session.get(url, headers=self.HEADERS, timeout=10)
             if resp.status_code == 200:
                 soup = BeautifulSoup(resp.text, "html.parser")
                 robots_meta = soup.find("meta", attrs={"name": "robots"})
@@ -242,7 +355,7 @@ class WebPresenceChecker:
             url = "https://" + url
 
         try:
-            resp = requests.get(url, headers=self.HEADERS, timeout=self.TIMEOUT)
+            resp = self.http_session.get(url, headers=self.HEADERS, timeout=self.TIMEOUT)
             if resp.status_code != 200:
                 return results
 
@@ -303,43 +416,131 @@ class WebPresenceChecker:
         return results
 
     def _check_directories(self, business_name: str, city: str) -> dict:
-        """Directory presence checks."""
+        """Directory presence checks using Yelp Fusion API and Google Places API.
+
+        Returns None for fields where the API key is missing or the call failed
+        (so the report can say "couldn't check" instead of "not found").
+        Returns False only when the API confirmed the business is not listed.
+        """
+        import os
+
         results = {
-            "google_business_found": False,
-            "yelp_found": False,
-            "bbb_found": False,
+            "google_business_found": None,
+            "google_rating": None,
+            "google_review_count": None,
+            "google_place_id": None,
+            "yelp_found": None,
+            "yelp_rating": None,
+            "yelp_review_count": None,
+            "yelp_url": None,
         }
 
-        query = quote_plus(f"{business_name} {city}")
+        def fuzzy_score(candidate_name: str) -> int:
+            candidate = (candidate_name or "").lower()
+            target = business_name.lower()
+            return max(
+                fuzz.ratio(target, candidate),
+                fuzz.partial_ratio(target, candidate),
+                fuzz.token_sort_ratio(target, candidate),
+            )
 
-        # Check Yelp
-        try:
-            yelp_url = f"https://www.yelp.com/search?find_desc={quote_plus(business_name)}&find_loc={quote_plus(city)}"
-            resp = requests.get(yelp_url, headers=self.HEADERS, timeout=self.TIMEOUT)
-            if resp.status_code == 200:
-                results["yelp_found"] = business_name.lower().split()[0] in resp.text.lower()
-        except requests.exceptions.RequestException:
-            pass
+        yelp_key = os.environ.get("YELP_API_KEY")
+        if not yelp_key:
+            logger.warning("YELP_API_KEY is not set; skipping Yelp directory check.")
+        else:
+            try:
+                resp = requests.get(
+                    "https://api.yelp.com/v3/businesses/search",
+                    headers={**self.HEADERS, "Authorization": f"Bearer {yelp_key}"},
+                    params={"term": business_name, "location": city, "limit": 5},
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Yelp directory check failed for %s in %s with status %s.",
+                        business_name,
+                        city,
+                        resp.status_code,
+                    )
+                else:
+                    businesses = resp.json().get("businesses", [])
+                    best_match = None
+                    best_score = 0
+                    for biz in businesses:
+                        score = fuzzy_score(biz.get("name", ""))
+                        if score >= 80 and score > best_score:
+                            best_match = biz
+                            best_score = score
 
-        # Check BBB
-        try:
-            bbb_url = f"https://www.bbb.org/search?find_text={quote_plus(business_name)}&find_loc={quote_plus(city)}"
-            resp = requests.get(bbb_url, headers=self.HEADERS, timeout=self.TIMEOUT)
-            if resp.status_code == 200:
-                results["bbb_found"] = business_name.lower().split()[0] in resp.text.lower()
-        except requests.exceptions.RequestException:
-            pass
+                    results["yelp_found"] = best_match is not None
+                    if best_match:
+                        results["yelp_rating"] = best_match.get("rating")
+                        results["yelp_review_count"] = best_match.get("review_count")
+                        results["yelp_url"] = best_match.get("url")
+            except (requests.exceptions.RequestException, ValueError) as exc:
+                logger.warning(
+                    "Yelp directory check failed for %s in %s: %s",
+                    business_name,
+                    city,
+                    exc,
+                )
 
-        # Check Google
-        try:
-            google_url = f"https://www.google.com/search?q={query}+reviews"
-            resp = requests.get(google_url, headers=self.HEADERS, timeout=self.TIMEOUT)
-            if resp.status_code == 200:
-                text = resp.text.lower()
-                results["google_business_found"] = (
-                    "rating" in text or "reviews" in text or "google.com/maps" in text
-                ) and business_name.lower().split()[0] in text
-        except requests.exceptions.RequestException:
-            pass
+        places_key = os.environ.get("GOOGLE_PLACES_API_KEY")
+        if not places_key:
+            logger.warning(
+                "GOOGLE_PLACES_API_KEY is not set; skipping Google Business directory check."
+            )
+        else:
+            try:
+                resp = requests.get(
+                    "https://maps.googleapis.com/maps/api/place/textsearch/json",
+                    params={
+                        "query": f"{business_name} {city}",
+                        "key": places_key,
+                    },
+                    headers=self.HEADERS,
+                    timeout=10,
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "Google Business directory check failed for %s in %s with status %s.",
+                        business_name,
+                        city,
+                        resp.status_code,
+                    )
+                else:
+                    payload = resp.json()
+                    status = payload.get("status")
+                    if status == "ZERO_RESULTS":
+                        results["google_business_found"] = False
+                    elif status != "OK":
+                        logger.warning(
+                            "Google Business directory check failed for %s in %s with API status %s.",
+                            business_name,
+                            city,
+                            status,
+                        )
+                    else:
+                        places = payload.get("results", [])
+                        best_match = None
+                        best_score = 0
+                        for place in places:
+                            score = fuzzy_score(place.get("name", ""))
+                            if score >= 80 and score > best_score:
+                                best_match = place
+                                best_score = score
+
+                        results["google_business_found"] = best_match is not None
+                        if best_match:
+                            results["google_rating"] = best_match.get("rating")
+                            results["google_review_count"] = best_match.get("user_ratings_total")
+                            results["google_place_id"] = best_match.get("place_id")
+            except (requests.exceptions.RequestException, ValueError) as exc:
+                logger.warning(
+                    "Google Business directory check failed for %s in %s: %s",
+                    business_name,
+                    city,
+                    exc,
+                )
 
         return results

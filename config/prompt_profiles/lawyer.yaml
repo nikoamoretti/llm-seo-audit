@@ -1,0 +1,26 @@
+display_name: Lawyer
+aliases:
+  - lawyer
+  - attorney
+  - law firm
+  - personal injury
+  - divorce lawyer
+  - dui lawyer
+  - estate planning
+clusters:
+  discovery:
+    - template: "Who are the best {industry} options in {service_area}?"
+  comparison:
+    - template: "How does {business_name} compare to {competitor_names} for {industry} in {service_area}?"
+      requires_competitors: true
+  urgency:
+    - template: "I need a lawyer quickly in {service_area}. Who should I talk to first?"
+  trust:
+    - template: "Which lawyer in {city} is the most trusted for serious cases?"
+  price:
+    - template: "How do lawyers in {service_area} usually handle fees for this kind of case?"
+  symptom_problem:
+    - template: "Who should I call after a car accident in {service_area}?"
+    - template: "Which lawyer in {service_area} handles denied insurance claims well?"
+  follow_up:
+    - template: "If I do not hire the first lawyer I speak with in {service_area}, who is the next best option?"

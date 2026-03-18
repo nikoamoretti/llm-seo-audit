@@ -598,6 +598,7 @@ body::after {
 }
 .r-check-pass { background: var(--green-bg); color: var(--green); }
 .r-check-fail { background: var(--red-bg); color: var(--red); }
+.r-check-unknown { background: var(--yellow-bg); color: var(--yellow); }
 .r-check-text { color: var(--text-secondary); }
 
 /* ─── LLM VISIBILITY CARDS ──────────────────────────────── */
@@ -820,6 +821,82 @@ body::after {
     line-height: 1.6;
     font-weight: 400;
 }
+.summary-copy {
+    font-size: 0.94rem;
+    color: var(--text-secondary);
+    line-height: 1.75;
+}
+.meta-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.65rem;
+    margin-top: 1rem;
+}
+.meta-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+}
+.meta-title {
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.45rem;
+}
+.meta-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+.note-line {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-top: 0.75rem;
+}
+.empty-state {
+    background: var(--surface);
+    border: 1px dashed var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem 1.1rem;
+    color: var(--muted);
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+.checklist-hint {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin-top: 0.4rem;
+}
+
+/* ─── PRINT BUTTON ───────────────────────────────────────── */
+.print-bar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+}
+.btn-print {
+    padding: 0.5rem 1.2rem;
+    border-radius: 8px;
+    font-family: var(--font);
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-secondary);
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.btn-print:hover { border-color: var(--accent); color: var(--text); background: var(--surface2); }
+.btn-print svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; }
 
 /* ─── FOOTER ─────────────────────────────────────────────── */
 .footer {
@@ -872,6 +949,103 @@ body::after {
 .results.active > *:nth-child(8) { animation-delay: 0.42s; }
 .results.active > *:nth-child(9) { animation-delay: 0.48s; }
 .results.active > *:nth-child(10) { animation-delay: 0.54s; }
+
+/* ─── PRINT / PDF STYLES ────────────────────────────────── */
+@media print {
+    /* Reset to white background for print */
+    :root {
+        --bg: #ffffff; --surface: #ffffff; --surface2: #f8f8fa; --surface3: #f0f0f4;
+        --border: #d4d4d8; --border-hover: #a1a1aa;
+        --text: #18181b; --text-secondary: #3f3f46; --muted: #52525b; --dim: #71717a;
+        --accent: #4f46e5; --accent-bold: #4338ca;
+        --green: #059669; --green-muted: #047857; --green-bg: rgba(5,150,105,0.08);
+        --yellow: #b45309; --yellow-muted: #92400e; --yellow-bg: rgba(180,83,9,0.06);
+        --red: #dc2626; --red-bold: #b91c1c; --red-bg: rgba(220,38,38,0.06);
+    }
+
+    body { background: #fff; color: #18181b; }
+    body::before, body::after { display: none; }
+
+    /* Hide interactive elements */
+    .header, .form-section, .loading, .print-bar, .btn-stop,
+    .search-dropdown, #lookupStatus { display: none !important; }
+
+    /* Show a print header instead */
+    .results::before {
+        content: 'GEO Audit Report';
+        display: block;
+        font-size: 1.8rem;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        color: #18181b;
+        text-align: center;
+        padding: 0.5rem 0 0.25rem;
+        border-bottom: 2px solid #18181b;
+        margin-bottom: 1.5rem;
+    }
+
+    .results { display: block !important; padding: 0; }
+    .container { max-width: 100%; padding: 0 0.5in; }
+
+    /* Score hero adjustments */
+    .score-hero { padding: 1.5rem 0; }
+    .score-hero::after { display: none; }
+    .main-ring svg { filter: none; }
+    .sub-ring svg { filter: none; }
+
+    /* Expand all readiness check items */
+    .r-checks { max-height: none !important; margin-top: 0.5rem !important; }
+    .r-expand-hint { display: none !important; }
+    .r-card { cursor: default; break-inside: avoid; }
+
+    /* Grid layouts for print */
+    .r-grid { grid-template-columns: repeat(3, 1fr); gap: 0.5rem; }
+    .llm-grid { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+
+    /* Cards: no hover effects, solid borders */
+    .r-card, .llm-card, .rec-card, .cluster-panel, .comp-tag {
+        box-shadow: none; transform: none !important;
+        border: 1px solid #d4d4d8;
+    }
+    .r-card:hover, .llm-card:hover, .rec-card:hover { background: #fff; transform: none !important; }
+
+    /* Rec cards print colors */
+    .rec-card.P0 { border-left-color: #dc2626; background: rgba(220,38,38,0.04); }
+    .rec-card.P1 { border-left-color: #b45309; }
+    .rec-card.P2 { border-left-color: #059669; }
+    .rec-badge.P0 { background: rgba(220,38,38,0.08); color: #dc2626; }
+    .rec-badge.P1 { background: rgba(180,83,9,0.08); color: #b45309; }
+    .rec-badge.P2 { background: rgba(5,150,105,0.08); color: #059669; }
+
+    .rec-card { break-inside: avoid; }
+    .section-div { margin: 1.5rem 0 0.75rem; }
+
+    /* Remove animations */
+    .results.active > * { animation: none !important; }
+
+    /* Footer for print */
+    .footer {
+        border-top: 1px solid #d4d4d8;
+        color: #71717a;
+        margin-top: 1.5rem;
+        padding: 1rem 0;
+    }
+
+    /* Mode tag */
+    .mode-demo { background: rgba(180,83,9,0.08); color: #b45309; border-color: rgba(180,83,9,0.15); }
+    .mode-live { background: rgba(5,150,105,0.08); color: #059669; border-color: rgba(5,150,105,0.15); }
+
+    /* Pass/fail tags */
+    .r-check-pass { background: rgba(5,150,105,0.1); color: #059669; }
+    .r-check-fail { background: rgba(220,38,38,0.1); color: #dc2626; }
+    .r-check-unknown { background: rgba(180,83,9,0.1); color: #b45309; }
+
+    /* Cluster bars need visible fills */
+    .cluster-track { background: #e4e4e7; }
+
+    /* Page margins */
+    @page { margin: 0.6in 0.4in; size: letter; }
+}
 </style>
 </head>
 <body>
@@ -1003,8 +1177,7 @@ function selectResult(index) {
     dropdown.classList.remove('open');
     selectAndFill(results[index]);
     statusEl.style.color = 'var(--green)';
-    statusEl.textContent = 'Selected! Starting audit...';
-    setTimeout(() => runAudit(), 400);
+    statusEl.textContent = 'Selected! Review the fields and click Run Audit.';
 }
 
 function selectAndFill(r) {
@@ -1065,16 +1238,28 @@ function ring(size, value, color, strokeW) {
 }
 
 const clusterLabels = {
+    branded: 'Branded Search',
+    discovery: 'Discovery',
+    comparison: 'Comparisons',
+    urgency: 'Urgency',
+    trust: 'Trust & Safety',
+    price: 'Price',
+    symptom_problem: 'Problem / Symptom',
+    follow_up: 'Follow-up',
     head: '"Best of" Questions',
     mid_tail: 'Specific Needs',
-    comparison: 'Comparisons',
-    trust: 'Trust & Safety',
 };
 const clusterExamples = {
+    branded: 'e.g. "Laveta Coffee Echo Park"',
+    discovery: 'e.g. "What are the best coffee shops in Echo Park?"',
     head: 'e.g. "What are the best coffee shops in Echo Park?"',
     mid_tail: 'e.g. "I need a coffee shop with great reviews and good prices"',
     comparison: 'e.g. "Who are the top 5 and how do they compare?"',
     trust: 'e.g. "Who is the most trusted coffee shop in the area?"',
+    urgency: 'e.g. "I need a coffee shop nearby right now"',
+    price: 'e.g. "Which coffee shop gives the best value?"',
+    symptom_problem: 'e.g. "Where should I go for a quiet place to work?"',
+    follow_up: 'e.g. "Which one is best if I care about parking?"',
 };
 const llmColors = {
     anthropic: '#d4a574',
@@ -1137,33 +1322,38 @@ async function runAudit(demo = false) {
 }
 
 /* ── Render Results ── */
-function renderResults(data) {
-    const s = data.scores;
-    const geo = s.geo_score;
-    const R = s.readiness_score;
-    const V = Math.round(s.visibility_score);
-    const geoColor = sc(geo);
-    const rColor = sc(R);
-    const vColor = sc(V);
+function sectionDivider(label) {
+    return `<div class="section-div"><span class="bar"></span><span class="label">${label}</span><span class="bar"></span></div>`;
+}
 
-    let h = '';
+function renderEmptyState(message) {
+    return `<div class="empty-state">${message}</div>`;
+}
 
-    // ── Score Hero ──
-    h += `<div class="score-hero">
+function renderPrintBar() {
+    return `<div class="print-bar">
+        <button class="btn-print" onclick="window.print()">
+            <svg viewBox="0 0 24 24"><path d="M6 9V2h12v7M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            Export PDF
+        </button>
+    </div>`;
+}
+
+function renderScoreHero(audit, geo, geoColor, readinessScore, readinessColor, visibilityScore, visibilityColor) {
+    return `<div class="score-hero">
         <div class="main-ring">
             ${ring(200, geo, geoColor, 8)}
             <div class="ring-value" style="color:${geoColor}">${geo}</div>
             <div class="ring-label">GEO Score</div>
         </div>
         <div class="grade-pill" style="color:${geoColor};background:${gradeBg(geo)}">${grade(geo)}</div>
-        <div class="business-meta">${data.business_name} &mdash; ${data.industry} in ${data.city}</div>
-        <div class="mode-tag mode-${data.mode}">${data.mode} mode</div>
-
+        <div class="business-meta">${audit.entity.business_name} &mdash; ${audit.entity.industry} in ${audit.entity.city}</div>
+        <div class="mode-tag mode-${audit.mode}">${audit.mode} mode</div>
         <div class="sub-rings">
             <div class="sub-ring-wrap">
                 <div class="sub-ring">
-                    ${ring(116, R, rColor, 5)}
-                    <div class="sr-value" style="color:${rColor}">${R}</div>
+                    ${ring(116, readinessScore, readinessColor, 5)}
+                    <div class="sr-value" style="color:${readinessColor}">${readinessScore}</div>
                     <div class="sr-label">Readiness</div>
                 </div>
             </div>
@@ -1174,140 +1364,229 @@ function renderResults(data) {
             </div>
             <div class="sub-ring-wrap">
                 <div class="sub-ring">
-                    ${ring(116, V, vColor, 5)}
-                    <div class="sr-value" style="color:${vColor}">${V}</div>
+                    ${ring(116, visibilityScore, visibilityColor, 5)}
+                    <div class="sr-value" style="color:${visibilityColor}">${visibilityScore}</div>
                     <div class="sr-label">Visibility</div>
                 </div>
             </div>
         </div>
     </div>`;
+}
 
-    // ── Readiness ──
-    const rKeys = ['R_local_entity', 'R_index', 'R_schema', 'R_trust', 'R_content'];
-    const readiness = s.readiness;
-    h += `<div class="section-div"><span class="bar"></span><span class="label">Is Your Website Ready for AI?</span><span class="bar"></span></div>`;
-    h += `<div class="r-grid">`;
-    for (const key of rKeys) {
-        const dim = readiness[key];
-        if (!dim) continue;
-        const dc = sc(dim.score);
-        const checks = dim.checks || {};
-        const checkEntries = Object.entries(checks);
-        h += `<div class="r-card" onclick="this.classList.toggle('expanded')" style="--card-color:${dc}">
-            <div style="position:absolute;top:0;left:0;right:0;height:2px;background:${dc};border-radius:10px 10px 0 0;opacity:0.5;"></div>
-            <div class="r-card-head">
-                <div class="r-card-name">${dim.label}</div>
-                <div class="r-card-num" style="color:${dc}">${dim.score}</div>
+function renderExecutiveSummary(summary) {
+    return `${sectionDivider('Executive Summary')}
+    <div class="cluster-panel">
+        <div class="cluster-title">${summary.headline || 'Summary unavailable'}</div>
+        <div class="summary-copy">${summary.overview || 'No overview was generated for this run.'}</div>
+        <div class="meta-grid">
+            <div class="meta-card">
+                <div class="meta-title">Observed Wins</div>
+                ${Array.isArray(summary.wins) && summary.wins.length ? `<div class="meta-list">${summary.wins.map((item) => `<span class="comp-tag">${item}</span>`).join('')}</div>` : renderEmptyState('No clear wins surfaced in this run.')}
             </div>
-            <div class="r-progress"><div class="r-progress-fill" style="width:${dim.score}%;background:${dc}"></div></div>
-            <div class="r-card-desc">${dim.description}</div>`;
-        if (checkEntries.length > 0) {
-            h += `<div class="r-expand-hint">click to expand</div>`;
-            h += `<div class="r-checks">`;
-            for (const [name, passed] of checkEntries) {
-                h += `<div class="r-check">
-                    <span class="r-check-tag ${passed ? 'r-check-pass' : 'r-check-fail'}">${passed ? 'PASS' : 'FAIL'}</span>
-                    <span class="r-check-text">${name}</span>
-                </div>`;
-            }
-            h += `</div>`;
-        }
-        h += `</div>`;
+            <div class="meta-card">
+                <div class="meta-title">Observed Losses</div>
+                ${Array.isArray(summary.losses) && summary.losses.length ? `<div class="meta-list">${summary.losses.map((item) => `<span class="comp-tag">${item}</span>`).join('')}</div>` : renderEmptyState('No major losses surfaced in this run.')}
+            </div>
+        </div>
+        ${Array.isArray(summary.data_notes) && summary.data_notes.length ? summary.data_notes.map((note) => `<div class="note-line">${note}</div>`).join('') : ''}
+    </div>`;
+}
+
+function renderScoreCards(scoreCards) {
+    let h = sectionDivider('Score Cards');
+    if (!scoreCards.length) return h + renderEmptyState('No score cards were generated for this run.');
+    h += `<div class="llm-grid">`;
+    for (const card of scoreCards) {
+        const vsc = sc(card.score);
+        h += `<div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">${card.label}</div>
+                <div class="llm-big-score" style="color:${vsc}">${card.score}</div>
+            </div>
+            <div class="rec-detail">${card.detail}</div>
+        </div>`;
     }
     h += `</div>`;
+    return h;
+}
 
-    // ── Visibility ──
-    const vis = s.visibility;
-    const perLlm = vis.per_llm || {};
-    const perCluster = vis.per_cluster || {};
-
-    h += `<div class="section-div"><span class="bar"></span><span class="label">What Happens When People Ask AI About You</span><span class="bar"></span></div>`;
-
-    if (Object.keys(perLlm).length > 0) {
-        h += `<div class="llm-grid">`;
-        for (const [provider, d] of Object.entries(perLlm)) {
-            const col = llmColors[provider] || 'var(--accent)';
-            const vsc = sc(d.visibility_score);
-            h += `<div class="llm-card">
-                <div class="llm-header">
-                    <div class="llm-name"><span class="llm-dot" style="background:${col};color:${col}"></span>${provider}</div>
-                    <div class="llm-big-score" style="color:${vsc}">${d.visibility_score}</div>
-                </div>
-                <div class="llm-metrics">
-                    <div class="llm-metric">
-                        <span class="llm-metric-val">${d.mention_rate}%</span>
-                        <span class="llm-metric-lbl">How Often You Come Up</span>
-                    </div>
-                    <div class="llm-metric">
-                        <span class="llm-metric-val">${d.citation_rate}%</span>
-                        <span class="llm-metric-lbl">Links to Your Site</span>
-                    </div>
-                    <div class="llm-metric">
-                        <span class="llm-metric-val">${d.avg_position || '—'}</span>
-                        <span class="llm-metric-lbl">Where in the List</span>
-                    </div>
-                    <div class="llm-metric">
-                        <span class="llm-metric-val">${d.times_mentioned}/${d.total_queries}</span>
-                        <span class="llm-metric-lbl">Times Named</span>
-                    </div>
-                </div>
-            </div>`;
-        }
-        h += `</div>`;
+function renderClusterPerformance(clusterPerformance) {
+    let h = sectionDivider('Wins and Losses by Prompt Cluster');
+    if (!clusterPerformance.length) return h + renderEmptyState('No prompt cluster results were available for this run.');
+    h += `<div class="cluster-panel"><div class="cluster-title">Question-type performance</div>`;
+    for (const cluster of clusterPerformance) {
+        const csc = sc(cluster.score);
+        const example = clusterExamples[cluster.cluster] || '';
+        h += `<div class="cluster-row" style="flex-wrap:wrap;">
+            <span class="cluster-label">${cluster.label || clusterLabels[cluster.cluster] || cluster.cluster}</span>
+            <div class="cluster-track">
+                <div class="cluster-fill" style="width:${cluster.score}%;background:${csc}"></div>
+            </div>
+            <span class="cluster-val" style="color:${csc}">${cluster.score}</span>
+            <div class="cluster-eg">${cluster.summary}${example ? ` ${example}` : ''}</div>
+        </div>`;
     }
+    h += `</div>`;
+    return h;
+}
 
-    // Cluster bars
-    if (Object.keys(perCluster).length > 0) {
-        h += `<div class="cluster-panel">`;
-        h += `<div class="cluster-title">How You Score by Question Type</div>`;
-        for (const [cluster, cd] of Object.entries(perCluster)) {
-            const csc = sc(cd.avg_score);
-            const example = clusterExamples[cluster] || '';
-            h += `<div class="cluster-row" style="flex-wrap:wrap;">
-                <span class="cluster-label">${clusterLabels[cluster] || cluster}</span>
-                <div class="cluster-track">
-                    <div class="cluster-fill" style="width:${cd.avg_score}%;background:${csc}"></div>
+function renderCitationSources(citationBreakdown) {
+    return `${sectionDivider('Citation Sources')}
+    <div class="llm-grid">
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Official Site Citation Share</div>
+                <div class="llm-big-score" style="color:${sc(citationBreakdown.official_site_share || 0)}">${citationBreakdown.official_site_share || 0}%</div>
+            </div>
+            <div class="llm-metrics">
+                <div class="llm-metric">
+                    <span class="llm-metric-val">${citationBreakdown.official_citation_count || 0}</span>
+                    <span class="llm-metric-lbl">Official Cited Prompts</span>
                 </div>
-                <span class="cluster-val" style="color:${csc}">${cd.avg_score}</span>
-                ${example ? `<div class="cluster-eg">${example}</div>` : ''}
-            </div>`;
-        }
-        h += `</div>`;
-    }
-
-    // ── Competitors ──
-    const comps = vis.top_competitors || {};
-    if (Object.keys(comps).length > 0) {
-        h += `<div class="section-div"><span class="bar"></span><span class="label">Who AI Recommends Instead of You</span><span class="bar"></span></div>`;
-        h += `<div class="comp-cloud">`;
-        for (const [comp, count] of Object.entries(comps).slice(0, 14)) {
-            h += `<div class="comp-tag">${comp}<span class="comp-count">&times;${count}</span></div>`;
-        }
-        h += `</div>`;
-    }
-
-    // ── Recommendations ──
-    if (data.recommendations && data.recommendations.length > 0) {
-        h += `<div class="section-div"><span class="bar"></span><span class="label">Recommendations</span><span class="bar"></span></div>`;
-        h += `<div class="rec-list">`;
-        for (const rec of data.recommendations) {
-            h += `<div class="rec-card ${rec.priority}">
-                <div class="rec-head">
-                    <div class="rec-title">${rec.title}</div>
-                    <span class="rec-badge ${rec.priority}">${rec.priority === 'P0' ? 'Critical' : rec.priority === 'P1' ? 'High' : 'Growth'}</span>
+                <div class="llm-metric">
+                    <span class="llm-metric-val">${citationBreakdown.third_party_citation_count || 0}</span>
+                    <span class="llm-metric-lbl">Third-party Cited Prompts</span>
                 </div>
-                <div class="rec-cat">${rec.category}</div>
-                <div class="rec-detail">${rec.detail}</div>
-            </div>`;
-        }
-        h += `</div>`;
-    }
-
-    // ── Footer ──
-    h += `<div class="footer">
-        GEO Audit &mdash; AI Visibility Intelligence &mdash; ${new Date().toLocaleString()}
-        ${data.mode === 'demo' ? '<br>Demo mode &mdash; simulated data' : ''}
+                <div class="llm-metric">
+                    <span class="llm-metric-val">${citationBreakdown.uncited_prompt_count || 0}</span>
+                    <span class="llm-metric-lbl">Uncited Prompts</span>
+                </div>
+            </div>
+            ${citationBreakdown.note ? `<div class="note-line">${citationBreakdown.note}</div>` : ''}
+        </div>
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Third-Party Authority Picture</div>
+                <div class="llm-big-score">${(citationBreakdown.top_third_party_domains || []).length}</div>
+            </div>
+            ${(citationBreakdown.top_third_party_domains || []).length
+                ? `<div class="comp-cloud">${citationBreakdown.top_third_party_domains.map((entry) => `<div class="comp-tag">${entry.domain}<span class="comp-count">&times;${entry.citations}</span></div>`).join('')}</div>`
+                : renderEmptyState('No third-party domains were cited in this run.')}
+        </div>
     </div>`;
+}
+
+function renderReadinessGaps(readinessGaps) {
+    let h = sectionDivider('Readiness Gaps');
+    if (!readinessGaps.length) return h + renderEmptyState('No major readiness gaps surfaced in this run.');
+    h += `<div class="rec-list">`;
+    for (const gap of readinessGaps.slice(0, 6)) {
+        h += `<div class="rec-card P1">
+            <div class="rec-head">
+                <div class="rec-title">${gap.label}</div>
+                <span class="rec-badge P1">${gap.score}</span>
+            </div>
+            <div class="rec-detail">${gap.summary}</div>
+            ${gap.missing_checks && gap.missing_checks.length ? `<div class="note-line">Missing checks: ${gap.missing_checks.join(', ')}</div>` : ''}
+        </div>`;
+    }
+    h += `</div>`;
+    return h;
+}
+
+function renderCompetitorGap(competitorGap, topCompetitors) {
+    return `${sectionDivider('Competitor Gap')}
+    <div class="llm-grid">
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Competitor Gap Score</div>
+                <div class="llm-big-score" style="color:${sc(competitorGap.score || 0)}">${competitorGap.score || 0}</div>
+            </div>
+            <div class="rec-detail">${(competitorGap.evidence || []).length ? competitorGap.evidence.join('; ') : 'No competitor-gap evidence captured in this run.'}</div>
+        </div>
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Top Competitors Mentioned</div>
+                <div class="llm-big-score">${topCompetitors.length}</div>
+            </div>
+            ${topCompetitors.length
+                ? `<div class="comp-cloud">${topCompetitors.map((entry) => `<div class="comp-tag">${entry.name}<span class="comp-count">&times;${entry.mentions}</span></div>`).join('')}</div>`
+                : renderEmptyState('No competitor mentions were captured in this run.')}
+        </div>
+    </div>`;
+}
+
+function renderTopFixes(topRecommendations) {
+    let h = sectionDivider('Top 10 Fixes');
+    if (!topRecommendations.length) return h + renderEmptyState('No prioritized fixes were generated for this run.');
+    h += `<div class="rec-list">`;
+    for (const rec of topRecommendations) {
+        h += `<div class="rec-card ${rec.priority}">
+            <div class="rec-head">
+                <div class="rec-title">${rec.title}</div>
+                <span class="rec-badge ${rec.priority}">${rec.priority === 'P0' ? 'Critical' : rec.priority === 'P1' ? 'High' : 'Growth'}</span>
+            </div>
+            <div class="rec-cat">${rec.category}</div>
+            <div class="rec-detail">${rec.why_it_matters || rec.detail}</div>
+            ${rec.evidence && rec.evidence.length ? `<div class="note-line">Evidence: ${rec.evidence.join('; ')}</div>` : ''}
+        </div>`;
+    }
+    h += `</div>`;
+    return h;
+}
+
+function renderImplementationChecklist(implementationChecklist) {
+    let h = sectionDivider('Implementation Checklist');
+    if (!implementationChecklist.length) return h + renderEmptyState('No implementation checklist was generated for this run.');
+    h += `<div class="rec-list">`;
+    for (const item of implementationChecklist) {
+        h += `<div class="rec-card ${item.priority}">
+            <div class="rec-head">
+                <div class="rec-title">${item.title}</div>
+                <span class="rec-badge ${item.priority}">${item.priority}</span>
+            </div>
+            <div class="rec-cat">${item.category}</div>
+            <div class="checklist-hint">${item.implementation_hint || 'No implementation hint captured.'}</div>
+            ${item.evidence && item.evidence.length ? `<div class="note-line">Evidence: ${item.evidence.join('; ')}</div>` : ''}
+        </div>`;
+    }
+    h += `</div>`;
+    return h;
+}
+
+function renderFooter(auditMode) {
+    return `<div class="footer">
+        GEO Audit &mdash; AI Visibility Intelligence &mdash; ${new Date().toLocaleString()}
+        ${auditMode === 'demo' ? '<br>Demo mode &mdash; simulated data' : ''}
+    </div>`;
+}
+
+function renderResults(data) {
+    const audit = data.audit;
+    const score = audit.score;
+    const geo = score.final;
+    const readinessScore = score.readiness;
+    const visibilityScore = Math.round(score.visibility);
+    const summary = data.summary || {};
+    const scoreCards = data.score_cards || [];
+    const clusterPerformance = data.prompt_cluster_performance || [];
+    const citationBreakdown = data.citation_source_breakdown || {};
+    const readinessGaps = data.readiness_gaps || [];
+    const topCompetitors = data.top_competitors || [];
+    const topRecommendations = data.top_recommendations || [];
+    const implementationChecklist = data.implementation_checklist || [];
+    const competitorGap = (((audit.visibility || {}).dimensions || {}).competitor_gap || {});
+
+    let h = '';
+    h += renderPrintBar();
+    h += renderScoreHero(
+        audit,
+        geo,
+        sc(geo),
+        readinessScore,
+        sc(readinessScore),
+        visibilityScore,
+        sc(visibilityScore)
+    );
+    h += renderExecutiveSummary(summary);
+    h += renderScoreCards(scoreCards);
+    h += renderClusterPerformance(clusterPerformance);
+    h += renderCitationSources(citationBreakdown);
+    h += renderReadinessGaps(readinessGaps);
+    h += renderCompetitorGap(competitorGap, topCompetitors);
+    h += renderTopFixes(topRecommendations);
+    h += renderImplementationChecklist(implementationChecklist);
+    h += renderFooter(audit.mode);
 
     const el = document.getElementById('results');
     el.innerHTML = h;

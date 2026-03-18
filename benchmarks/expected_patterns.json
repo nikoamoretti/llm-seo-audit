@@ -1,0 +1,246 @@
+{
+  "defaults": {
+    "max_score_delta": 8
+  },
+  "businesses": {
+    "laveta_echo_park": {
+      "baseline_scores": {
+        "final": 93,
+        "readiness": 96,
+        "visibility": 91.2
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Woodcat Coffee"]
+    },
+    "bright_smile_phoenix": {
+      "baseline_scores": {
+        "final": 93,
+        "readiness": 96,
+        "visibility": 91.2
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Desert Dental Studio"]
+    },
+    "parker_law_sandiego": {
+      "baseline_scores": {
+        "final": 93,
+        "readiness": 96,
+        "visibility": 91.2
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Harbor Injury Law"]
+    },
+    "harbor_hvac_seattle": {
+      "baseline_scores": {
+        "final": 93,
+        "readiness": 96,
+        "visibility": 91.2
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["RainCity Climate"]
+    },
+    "northstar_accounting_denver": {
+      "baseline_scores": {
+        "final": 93,
+        "readiness": 96,
+        "visibility": 91.2
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Peak Ledger Group"]
+    },
+    "oak_and_ember_austin": {
+      "baseline_scores": {
+        "final": 93,
+        "readiness": 96,
+        "visibility": 91.2
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Sunrise Bakeshop"]
+    },
+    "greenleaf_vet_portland": {
+      "baseline_scores": {
+        "final": 93,
+        "readiness": 96,
+        "visibility": 91.2
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Rose City Animal Care"]
+    },
+    "willow_medspa_scottsdale": {
+      "baseline_scores": {
+        "final": 93,
+        "readiness": 96,
+        "visibility": 91.2
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Desert Glow Med Spa"]
+    },
+    "river_city_plumbing_sacramento": {
+      "baseline_scores": {
+        "final": 73,
+        "readiness": 88,
+        "visibility": 60.7
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Golden State Plumbing"]
+    },
+    "summit_roofing_boise": {
+      "baseline_scores": {
+        "final": 73,
+        "readiness": 88,
+        "visibility": 60.7
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Treeline Roofing"]
+    },
+    "luna_floral_sanfrancisco": {
+      "baseline_scores": {
+        "final": 73,
+        "readiness": 88,
+        "visibility": 60.7
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Golden Gate Blooms"]
+    },
+    "atlas_fitness_chicago": {
+      "baseline_scores": {
+        "final": 73,
+        "readiness": 88,
+        "visibility": 60.7
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Lakefront Training Club"]
+    },
+    "cypress_family_dental_tampa": {
+      "baseline_scores": {
+        "final": 73,
+        "readiness": 88,
+        "visibility": 60.7
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Bay Dental Studio"]
+    },
+    "acme_plumbing_austin": {
+      "baseline_scores": {
+        "final": 38,
+        "readiness": 74,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["A-Team Plumbing"],
+      "expected_recommendation_keywords": ["Expand pages", "Close the answer-space gap"]
+    },
+    "redwood_law_sanjose": {
+      "baseline_scores": {
+        "final": 38,
+        "readiness": 74,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["Silicon Valley Counsel"],
+      "expected_recommendation_keywords": ["Expand pages", "Close the answer-space gap"]
+    },
+    "harvest_hvac_fresno": {
+      "baseline_scores": {
+        "final": 38,
+        "readiness": 74,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["Central Valley Climate"],
+      "expected_recommendation_keywords": ["Expand pages", "Close the answer-space gap"]
+    },
+    "marina_vet_miami": {
+      "baseline_scores": {
+        "final": 38,
+        "readiness": 74,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["Biscayne Animal Hospital"],
+      "expected_recommendation_keywords": ["Expand pages", "Close the answer-space gap"]
+    },
+    "elm_street_dental_omaha": {
+      "baseline_scores": {
+        "final": 38,
+        "readiness": 75,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["Midtown Dental Care"],
+      "expected_recommendation_keywords": ["Expand pages"]
+    },
+    "evergreen_electric_spokane": {
+      "baseline_scores": {
+        "final": 38,
+        "readiness": 75,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["Lilac City Electric"],
+      "expected_recommendation_keywords": ["Expand pages"]
+    },
+    "harbor_floral_boston": {
+      "baseline_scores": {
+        "final": 38,
+        "readiness": 75,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["Beacon Bloom Studio"],
+      "expected_recommendation_keywords": ["Expand pages"]
+    },
+    "sterling_tax_charlotte": {
+      "baseline_scores": {
+        "final": 38,
+        "readiness": 75,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["Queen City Tax Group"],
+      "expected_recommendation_keywords": ["Expand pages"]
+    },
+    "mosaic_medspa_dallas": {
+      "baseline_scores": {
+        "final": 78,
+        "readiness": 88,
+        "visibility": 70.0
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Uptown Skin Studio"],
+      "expected_recommendation_keywords": ["Claim and verify the Google Business Profile", "Complete the Yelp listing"]
+    },
+    "fieldstone_accounting_atlanta": {
+      "baseline_scores": {
+        "final": 78,
+        "readiness": 88,
+        "visibility": 70.0
+      },
+      "expected_band": "strong",
+      "expected_top_competitors": ["Peachtree Tax Partners"],
+      "expected_recommendation_keywords": ["Claim and verify the Google Business Profile", "Complete the Yelp listing"]
+    },
+    "peak_roofing_reno": {
+      "baseline_scores": {
+        "final": 0,
+        "readiness": 78,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["High Desert Roofing"],
+      "expected_penalties": ["noindex", "robots_blocked", "website_inaccessible"],
+      "expected_recommendation_keywords": ["Remove the noindex directive", "Allow crawl access", "Restore public access"]
+    },
+    "shoreline_hvac_longbeach": {
+      "baseline_scores": {
+        "final": 0,
+        "readiness": 78,
+        "visibility": 8.2
+      },
+      "expected_band": "weak",
+      "expected_top_competitors": ["Pacific Air Systems"],
+      "expected_penalties": ["noindex", "robots_blocked", "website_inaccessible"],
+      "expected_recommendation_keywords": ["Remove the noindex directive", "Allow crawl access", "Restore public access"]
+    }
+  }
+}

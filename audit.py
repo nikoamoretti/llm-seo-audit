@@ -10,11 +10,10 @@ Usage:
 """
 
 import argparse
-import json
 import os
 import re
-import sys
 import time
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -25,11 +24,14 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich import box
 
-from llm_querier import LLMQuerier
-from web_presence import WebPresenceChecker
+from app import compute_geo_score, compute_readiness_score, compute_visibility_score
 from analyzer import ResponseAnalyzer
-from report_generator import ReportGenerator
 from demo_mode import DemoAuditor
+from llm_querier import LLMQuerier
+from report_generator import ReportGenerator
+from src.core.audit_builder import build_audit_run
+from src.core.models import AuditRun
+from web_presence import WebPresenceChecker
 
 console = Console()
 
@@ -91,15 +93,37 @@ def run_audit(business_name: str, industry: str, city: str,
 
         demo_auditor = DemoAuditor(business_name, industry, city, website_url)
         results = demo_auditor.run()
-        results["mode"] = "demo"
+        audit_run = build_audit_run(
+            mode="demo",
+            business_name=business_name,
+            industry=industry,
+            city=city,
+            website_url=website_url,
+            phone=None,
+            web_presence=results["web_presence"],
+            llm_results=results["llm_results"],
+            api_keys_used=results.get("api_keys_available", []),
+            timestamp=results.get("timestamp"),
+        )
     else:
         available = ", ".join(api_keys.keys())
         console.print(f"[green]API keys found:[/] {available}\n")
         results = run_live_audit(business_name, industry, city, website_url, api_keys)
-        results["mode"] = "live"
+        audit_run = build_audit_run(
+            mode="live",
+            business_name=business_name,
+            industry=industry,
+            city=city,
+            website_url=website_url,
+            phone=None,
+            web_presence=results["web_presence"],
+            llm_results=results["llm_results"],
+            api_keys_used=results.get("api_keys_available", []),
+            timestamp=results.get("timestamp"),
+        )
 
     # --- Generate Reports ---
-    report_gen = ReportGenerator(results, output_dir)
+    report_gen = ReportGenerator(audit_run, output_dir)
 
     with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
                   console=console, transient=True) as progress:
@@ -108,7 +132,7 @@ def run_audit(business_name: str, industry: str, city: str,
         html_path = report_gen.save_html()
 
     console.print()
-    print_terminal_report(results)
+    print_terminal_report(audit_run)
 
     console.print()
     console.print(Panel(
@@ -117,7 +141,7 @@ def run_audit(business_name: str, industry: str, city: str,
         border_style="green",
     ))
 
-    return results
+    return audit_run.model_dump(mode="json")
 
 
 def run_live_audit(business_name: str, industry: str, city: str,
@@ -126,7 +150,10 @@ def run_live_audit(business_name: str, industry: str, city: str,
 
     queries = [q.format(industry=industry, city=city) for q in QUERIES]
     querier = LLMQuerier(api_keys)
-    analyzer = ResponseAnalyzer(business_name)
+    known_facts = {"city": city, "industry": industry}
+    if website_url:
+        known_facts["website"] = website_url
+    analyzer = ResponseAnalyzer(business_name, known_facts=known_facts)
 
     # --- Query LLMs ---
     llm_results = {}
@@ -137,11 +164,13 @@ def run_live_audit(business_name: str, industry: str, city: str,
             provider_responses = []
             for query in queries:
                 try:
-                    response = querier.query(provider, query)
+                    engine_response = querier.query_structured(provider, query)
+                    response = engine_response.raw_text
                     analysis = analyzer.analyze_response(response, query)
                     provider_responses.append({
                         "query": query,
                         "response": response,
+                        "engine_response": asdict(engine_response),
                         "analysis": analysis,
                     })
                 except Exception as e:
@@ -157,15 +186,11 @@ def run_live_audit(business_name: str, industry: str, city: str,
 
     # --- Web Presence Check ---
     web_results = {}
-    if website_url:
-        with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-                      console=console, transient=True) as progress:
-            progress.add_task("Checking web presence...", total=None)
-            checker = WebPresenceChecker()
-            web_results = checker.check_all(business_name, website_url, city)
-
-    # --- Compute Scores ---
-    scores = compute_scores(llm_results, web_results, list(api_keys.keys()))
+    with Progress(SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
+                  console=console, transient=True) as progress:
+        progress.add_task("Checking web presence...", total=None)
+        checker = WebPresenceChecker()
+        web_results = checker.check_all(business_name, website_url or "", city)
 
     return {
         "business_name": business_name,
@@ -177,113 +202,57 @@ def run_live_audit(business_name: str, industry: str, city: str,
         "queries": [q.format(industry=industry, city=city) for q in QUERIES],
         "llm_results": llm_results,
         "web_presence": web_results,
-        "scores": scores,
     }
 
 
 def compute_scores(llm_results: dict, web_results: dict, providers: list) -> dict:
-    """Compute the overall visibility score."""
+    """Legacy wrapper over the active score_v2 engine."""
+    del providers
 
-    per_llm = {}
-    total_mentioned = 0
-    total_queries = 0
-    all_competitors = {}
-    all_attributes = []
-    best_position_sum = 0
-    position_count = 0
+    readiness = compute_readiness_score(web_results)
+    visibility = compute_visibility_score(llm_results)
+    canonical_scores = compute_geo_score(readiness, visibility, bool(web_results))
 
-    for provider, responses in llm_results.items():
-        mentioned = 0
-        positions = []
-        competitors = {}
-        attributes = []
-
-        for r in responses:
-            a = r["analysis"]
-            total_queries += 1
-            if a.get("mentioned"):
-                mentioned += 1
-                total_mentioned += 1
-            if a.get("position") is not None:
-                positions.append(a["position"])
-                best_position_sum += a["position"]
-                position_count += 1
-            for comp in a.get("competitors", []):
-                competitors[comp] = competitors.get(comp, 0) + 1
-                all_competitors[comp] = all_competitors.get(comp, 0) + 1
-            attributes.extend(a.get("attributes", []))
-            all_attributes.extend(a.get("attributes", []))
-
-        mention_rate = mentioned / len(responses) if responses else 0
-        avg_position = sum(positions) / len(positions) if positions else None
-
-        # Score: 60% mention rate + 40% position quality
-        position_score = 0
-        if avg_position is not None:
-            # Position 1 = 100, Position 2 = 75, Position 3 = 50, etc.
-            position_score = max(0, 100 - (avg_position - 1) * 25)
-
-        llm_score = int(mention_rate * 60 + (position_score / 100) * 40) if mention_rate > 0 else 0
-
-        per_llm[provider] = {
-            "score": llm_score,
-            "mention_rate": round(mention_rate * 100, 1),
-            "avg_position": round(avg_position, 1) if avg_position else None,
-            "total_queries": len(responses),
-            "times_mentioned": mentioned,
-            "top_competitors": dict(sorted(competitors.items(), key=lambda x: -x[1])[:10]),
-            "attributes_cited": list(set(attributes)),
+    per_llm = {
+        provider: {
+            "score": data.get("visibility_score", 0),
+            "mention_rate": data.get("mention_rate", 0),
+            "avg_position": data.get("avg_position"),
+            "total_queries": data.get("total_queries", 0),
+            "times_mentioned": data.get("times_mentioned", 0),
+            "top_competitors": data.get("top_competitors", {}),
+            "attributes_cited": data.get("attributes_cited", []),
         }
-
-    # Overall LLM score
-    overall_mention_rate = total_mentioned / total_queries if total_queries > 0 else 0
-    avg_pos = best_position_sum / position_count if position_count > 0 else None
-    pos_component = max(0, 100 - ((avg_pos - 1) * 25)) if avg_pos else 0
-
-    llm_score = int(overall_mention_rate * 60 + (pos_component / 100) * 40) if overall_mention_rate > 0 else 0
-
-    # Web presence score
-    web_score = 0
-    if web_results:
-        checks = [
-            web_results.get("has_schema_markup", False),
-            web_results.get("has_og_tags", False),
-            web_results.get("has_meta_description", False),
-            web_results.get("has_title_tag", False),
-            web_results.get("google_business_found", False),
-            web_results.get("yelp_found", False),
-            web_results.get("bbb_found", False),
-            web_results.get("ssl_valid", False),
-            web_results.get("mobile_friendly_meta", False),
-            web_results.get("fast_load", False),
-        ]
-        web_score = int(sum(checks) / len(checks) * 100)
-
-    # Combined: 70% LLM visibility + 30% web presence
-    if web_results:
-        overall = int(llm_score * 0.7 + web_score * 0.3)
-    else:
-        overall = llm_score
+        for provider, data in visibility.get("per_llm", {}).items()
+    }
+    avg_positions = [
+        data["avg_position"]
+        for data in per_llm.values()
+        if data.get("avg_position") is not None
+    ]
 
     return {
-        "overall_score": overall,
-        "llm_visibility_score": llm_score,
-        "web_presence_score": web_score,
+        "overall_score": canonical_scores["geo_score"],
+        "llm_visibility_score": canonical_scores["visibility_score"],
+        "web_presence_score": canonical_scores["readiness_score"],
         "per_llm": per_llm,
-        "overall_mention_rate": round(overall_mention_rate * 100, 1),
-        "overall_avg_position": round(avg_pos, 1) if avg_pos else None,
-        "top_competitors": dict(sorted(all_competitors.items(), key=lambda x: -x[1])[:15]),
-        "attributes_cited": list(set(all_attributes)),
+        "overall_mention_rate": visibility.get("overall_mention_rate", 0),
+        "overall_avg_position": round(sum(avg_positions) / len(avg_positions), 1) if avg_positions else None,
+        "top_competitors": visibility.get("top_competitors", {}),
+        "attributes_cited": visibility.get("attributes_cited", []),
     }
 
 
-def print_terminal_report(results: dict):
+def print_terminal_report(audit_run: AuditRun):
     """Print a formatted terminal report."""
 
-    scores = results["scores"]
+    def format_check_status(status):
+        if status is None:
+            return "[yellow]NOT CHECKED[/]"
+        return "[green]PASS[/]" if status else "[red]FAIL[/]"
 
     # --- Overall Score ---
-    score = scores["overall_score"]
+    score = audit_run.score.final
     if score >= 70:
         color = "green"
         grade = "STRONG"
@@ -309,21 +278,21 @@ def print_terminal_report(results: dict):
     table.add_column("Avg Position", justify="center", width=14)
     table.add_column("Times Mentioned", justify="center", width=16)
 
-    for provider, data in scores.get("per_llm", {}).items():
-        s = data["score"]
+    for provider, data in audit_run.visibility.per_llm.items():
+        s = round(data.visibility_score, 1)
         sc = "green" if s >= 70 else ("yellow" if s >= 40 else "red")
         table.add_row(
             provider.title(),
             f"[{sc}]{s}[/]",
-            f"{data['mention_rate']}%",
-            str(data['avg_position'] or 'N/A'),
-            f"{data['times_mentioned']}/{data['total_queries']}",
+            f"{data.mention_rate}%",
+            str(data.avg_position or 'N/A'),
+            f"{data.times_mentioned}/{data.total_queries}",
         )
     console.print(table)
 
     # --- Web Presence ---
-    if results.get("web_presence"):
-        wp = results["web_presence"]
+    if audit_run.web_presence:
+        wp = audit_run.web_presence
         web_table = Table(title="Web Presence Checks", box=box.ROUNDED, show_lines=True)
         web_table.add_column("Check", width=30)
         web_table.add_column("Status", justify="center", width=10)
@@ -337,30 +306,28 @@ def print_terminal_report(results: dict):
             ("Mobile-Friendly Meta", wp.get("mobile_friendly_meta")),
             ("Google Business Profile", wp.get("google_business_found")),
             ("Yelp Listing", wp.get("yelp_found")),
-            ("BBB Listing", wp.get("bbb_found")),
             ("Fast Load Time", wp.get("fast_load")),
         ]
         for name, status in checks:
-            icon = "[green]PASS[/]" if status else "[red]FAIL[/]"
-            web_table.add_row(name, icon)
+            web_table.add_row(name, format_check_status(status))
 
-        ws = scores["web_presence_score"]
+        ws = audit_run.score.readiness
         web_table.add_row("[bold]Web Presence Score[/]", f"[bold]{ws}/100[/]")
         console.print(web_table)
 
     # --- Competitors ---
-    if scores.get("top_competitors"):
+    if audit_run.visibility.top_competitors:
         comp_table = Table(title="Top Competitors Mentioned by LLMs", box=box.ROUNDED)
         comp_table.add_column("Competitor", style="bold")
         comp_table.add_column("Times Mentioned", justify="center")
 
-        for comp, count in list(scores["top_competitors"].items())[:10]:
+        for comp, count in list(audit_run.visibility.top_competitors.items())[:10]:
             comp_table.add_row(comp, str(count))
         console.print(comp_table)
 
     # --- Attributes ---
-    if scores.get("attributes_cited"):
-        attrs = scores["attributes_cited"][:15]
+    if audit_run.visibility.attributes_cited:
+        attrs = audit_run.visibility.attributes_cited[:15]
         console.print(Panel(
             ", ".join(attrs),
             title="[bold]Attributes/Reasons LLMs Cite[/]",
@@ -368,130 +335,34 @@ def print_terminal_report(results: dict):
         ))
 
     # --- Recommendations ---
-    recs = generate_recommendations(results)
+    recs = audit_run.recommendations
     if recs:
         rec_table = Table(title="Recommendations to Improve LLM Visibility",
                           box=box.ROUNDED, show_lines=True)
         rec_table.add_column("Priority", justify="center", width=10)
         rec_table.add_column("Recommendation", width=70)
 
-        for i, rec in enumerate(recs, 1):
-            priority = "[red]HIGH[/]" if i <= 3 else "[yellow]MED[/]"
-            rec_table.add_row(priority, rec)
+        priority_colors = {"P0": "red", "P1": "yellow", "P2": "cyan"}
+        for rec in recs:
+            color = priority_colors.get(rec.priority, "white")
+            rec_table.add_row(
+                f"[{color}]{rec.priority}[/]",
+                (
+                    f"{rec.title}\n"
+                    f"[dim]{rec.why_it_matters or rec.detail}[/]\n"
+                    f"[blue]Hint:[/] {rec.implementation_hint}"
+                ),
+            )
         console.print(rec_table)
 
     # --- Demo mode notice ---
-    if results.get("mode") == "demo":
+    if audit_run.mode == "demo":
         console.print()
         console.print(Panel(
             "[yellow]This audit was run in DEMO mode with simulated data.\n"
             "Set API keys to run a live audit with real LLM responses.[/]",
             border_style="yellow",
         ))
-
-
-def generate_recommendations(results: dict) -> list:
-    """Generate actionable recommendations based on audit results."""
-    recs = []
-    scores = results["scores"]
-    wp = results.get("web_presence", {})
-
-    if scores["overall_mention_rate"] < 50:
-        recs.append(
-            "Your business appears in fewer than half of LLM responses. "
-            "Research shows there's a strong correlation between third-party mention density "
-            "and AI citation rates. Focus on getting listed across directories and mentioned "
-            "in comparison articles, roundups, and local press."
-        )
-
-    if scores.get("overall_avg_position") and scores["overall_avg_position"] > 3:
-        recs.append(
-            "When mentioned, you appear late in recommendations (position "
-            f"{scores['overall_avg_position']:.0f}+). LLMs rank by perceived authority: "
-            "review volume, awards, media coverage, and consistent brand signals across "
-            "platforms. Strengthening these pushes you higher in AI-generated lists."
-        )
-
-    if wp.get("has_schema_markup") is False:
-        recs.append(
-            "Add Schema.org structured data (LocalBusiness, FAQ, Review schemas) to your "
-            "website. Pages with schema markup are 78% more likely to be cited by AI systems. "
-            "This helps LLMs understand your business entity, services, hours, and location."
-        )
-
-    if wp.get("has_og_tags") is False:
-        recs.append(
-            "Add Open Graph meta tags. AI crawlers and social previews use these to parse "
-            "your business identity. Include og:title, og:description, og:type, and og:image."
-        )
-
-    if wp.get("google_business_found") is False:
-        recs.append(
-            "Claim and optimize your Google Business Profile. While ChatGPT uses Bing "
-            "(not Google Maps), GBP data feeds into training datasets and Google AI Overviews."
-        )
-
-    if wp.get("yelp_found") is False:
-        recs.append(
-            "Create or claim your Yelp business listing. ChatGPT pulls directly from Yelp, "
-            "TripAdvisor, and Angi when recommending local businesses. Being absent from "
-            "these directories means you're invisible to the most-used AI assistant."
-        )
-
-    if wp.get("bbb_found") is False:
-        recs.append(
-            "Get listed on the Better Business Bureau. BBB is a trust signal that LLMs "
-            "reference for credibility, especially for service businesses."
-        )
-
-    if wp.get("ssl_valid") is False:
-        recs.append(
-            "Install an SSL certificate (HTTPS). Insecure sites are deprioritized by both "
-            "traditional search and AI systems."
-        )
-
-    # Bing-specific recommendation (ChatGPT uses Bing, not Google)
-    recs.append(
-        "Optimize for Bing — ChatGPT uses Bing for real-time search, NOT Google. "
-        "Claim your Bing Places listing and submit your sitemap to Bing Webmaster Tools. "
-        "Most businesses overlook this, giving you an easy competitive advantage."
-    )
-
-    competitors = scores.get("top_competitors", {})
-    if competitors:
-        top = list(competitors.keys())[:3]
-        recs.append(
-            f"Study these frequently-mentioned competitors: {', '.join(top)}. "
-            "Analyze their directory presence, review volume, and content strategy — "
-            "then replicate what makes them visible to AI."
-        )
-
-    recs.append(
-        "Create self-contained answer blocks (134-167 words) on your site that directly "
-        "answer common questions about your industry in your city. Research shows this "
-        "format is 4.2x more likely to be extracted by AI Overviews. Add FAQ sections "
-        "that mirror how people ask AI assistants for recommendations."
-    )
-
-    recs.append(
-        "Build presence on Reddit, Quora, and community forums. These are among the most "
-        "heavily cited sources in AI-generated answers. Genuine participation in relevant "
-        "threads where your business gets recommended carries significant weight."
-    )
-
-    recs.append(
-        "Content has a 3-month citation cliff — AI systems strongly favor recently updated "
-        "pages. Refresh your key service pages, blog posts, and directory listings quarterly "
-        "to maintain visibility."
-    )
-
-    recs.append(
-        "Encourage customers to leave reviews on Google, Yelp, and industry platforms. "
-        "LLMs evaluate review volume, recency, and sentiment when deciding which businesses "
-        "to recommend. Respond to reviews — engagement signals authority."
-    )
-
-    return recs
 
 
 def main():

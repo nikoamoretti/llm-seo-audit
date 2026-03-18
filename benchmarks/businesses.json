@@ -1,0 +1,227 @@
+[
+  {
+    "id": "laveta_echo_park",
+    "business_name": "Laveta Coffee",
+    "industry": "coffee shop",
+    "city": "Echo Park, Los Angeles",
+    "website_url": "https://lavetacoffee.com",
+    "fixture_profile": "strong_local",
+    "competitors": ["Woodcat Coffee", "Stereoscope Coffee"]
+  },
+  {
+    "id": "bright_smile_phoenix",
+    "business_name": "Bright Smile Dental",
+    "industry": "dentist",
+    "city": "Phoenix, AZ",
+    "website_url": "https://brightsmiledental.example",
+    "fixture_profile": "strong_local",
+    "competitors": ["Desert Dental Studio", "Camelback Family Dentistry"]
+  },
+  {
+    "id": "parker_law_sandiego",
+    "business_name": "Parker Law Group",
+    "industry": "lawyer",
+    "city": "San Diego, CA",
+    "website_url": "https://parkerlaw.example",
+    "fixture_profile": "strong_local",
+    "competitors": ["Harbor Injury Law", "Seaside Trial Counsel"]
+  },
+  {
+    "id": "harbor_hvac_seattle",
+    "business_name": "Harbor HVAC",
+    "industry": "hvac contractor",
+    "city": "Seattle, WA",
+    "website_url": "https://harborhvac.example",
+    "fixture_profile": "strong_local",
+    "competitors": ["RainCity Climate", "Sound Heating Pros"]
+  },
+  {
+    "id": "northstar_accounting_denver",
+    "business_name": "Northstar Accounting",
+    "industry": "accountant",
+    "city": "Denver, CO",
+    "website_url": "https://northstaraccounting.example",
+    "fixture_profile": "strong_local",
+    "competitors": ["Peak Ledger Group", "Mile High Tax Partners"]
+  },
+  {
+    "id": "oak_and_ember_austin",
+    "business_name": "Oak & Ember Bakery",
+    "industry": "bakery",
+    "city": "Austin, TX",
+    "website_url": "https://oakandember.example",
+    "fixture_profile": "strong_local",
+    "competitors": ["Sunrise Bakeshop", "Capitol Crumb"]
+  },
+  {
+    "id": "greenleaf_vet_portland",
+    "business_name": "Greenleaf Vet Clinic",
+    "industry": "veterinarian",
+    "city": "Portland, OR",
+    "website_url": "https://greenleafvet.example",
+    "fixture_profile": "strong_local",
+    "competitors": ["Rose City Animal Care", "Willamette Pet Health"]
+  },
+  {
+    "id": "willow_medspa_scottsdale",
+    "business_name": "Willow Med Spa",
+    "industry": "med spa",
+    "city": "Scottsdale, AZ",
+    "website_url": "https://willowmedspa.example",
+    "fixture_profile": "strong_local",
+    "competitors": ["Desert Glow Med Spa", "Scottsdale Skin Studio"]
+  },
+  {
+    "id": "river_city_plumbing_sacramento",
+    "business_name": "River City Plumbing",
+    "industry": "plumber",
+    "city": "Sacramento, CA",
+    "website_url": "https://rivercityplumbing.example",
+    "fixture_profile": "balanced",
+    "competitors": ["Golden State Plumbing", "Capitol Rooter"]
+  },
+  {
+    "id": "summit_roofing_boise",
+    "business_name": "Summit Roofing",
+    "industry": "roofing contractor",
+    "city": "Boise, ID",
+    "website_url": "https://summitroofing.example",
+    "fixture_profile": "balanced",
+    "competitors": ["Treeline Roofing", "Boise Peak Roofing"]
+  },
+  {
+    "id": "luna_floral_sanfrancisco",
+    "business_name": "Luna Floral Studio",
+    "industry": "florist",
+    "city": "San Francisco, CA",
+    "website_url": "https://lunafloral.example",
+    "fixture_profile": "balanced",
+    "competitors": ["Golden Gate Blooms", "Mission Flower House"]
+  },
+  {
+    "id": "atlas_fitness_chicago",
+    "business_name": "Atlas Fitness Lab",
+    "industry": "gym",
+    "city": "Chicago, IL",
+    "website_url": "https://atlasfitness.example",
+    "fixture_profile": "balanced",
+    "competitors": ["Lakefront Training Club", "West Loop Strength"]
+  },
+  {
+    "id": "cypress_family_dental_tampa",
+    "business_name": "Cypress Family Dental",
+    "industry": "dentist",
+    "city": "Tampa, FL",
+    "website_url": "https://cypressdental.example",
+    "fixture_profile": "balanced",
+    "competitors": ["Bay Dental Studio", "Harbor Family Dentistry"]
+  },
+  {
+    "id": "acme_plumbing_austin",
+    "business_name": "Acme Plumbing",
+    "industry": "plumber",
+    "city": "Austin, TX",
+    "website_url": "https://acmeplumbing.example",
+    "fixture_profile": "competitor_heavy",
+    "competitors": ["A-Team Plumbing", "Capital Flow Plumbing"]
+  },
+  {
+    "id": "redwood_law_sanjose",
+    "business_name": "Redwood Law Office",
+    "industry": "lawyer",
+    "city": "San Jose, CA",
+    "website_url": "https://redwoodlaw.example",
+    "fixture_profile": "competitor_heavy",
+    "competitors": ["Silicon Valley Counsel", "South Bay Legal Group"]
+  },
+  {
+    "id": "harvest_hvac_fresno",
+    "business_name": "Harvest HVAC",
+    "industry": "hvac contractor",
+    "city": "Fresno, CA",
+    "website_url": "https://harvesthvac.example",
+    "fixture_profile": "competitor_heavy",
+    "competitors": ["Central Valley Climate", "Fresno Air Experts"]
+  },
+  {
+    "id": "marina_vet_miami",
+    "business_name": "Marina Pet Care",
+    "industry": "veterinarian",
+    "city": "Miami, FL",
+    "website_url": "https://marinapetcare.example",
+    "fixture_profile": "competitor_heavy",
+    "competitors": ["Biscayne Animal Hospital", "Coral Pet Health"]
+  },
+  {
+    "id": "elm_street_dental_omaha",
+    "business_name": "Elm Street Dental",
+    "industry": "dentist",
+    "city": "Omaha, NE",
+    "website_url": "https://elmstreetdental.example",
+    "fixture_profile": "weak_visibility",
+    "competitors": ["Midtown Dental Care", "Riverfront Smile Studio"]
+  },
+  {
+    "id": "evergreen_electric_spokane",
+    "business_name": "Evergreen Electric",
+    "industry": "electrician",
+    "city": "Spokane, WA",
+    "website_url": "https://evergreenelectric.example",
+    "fixture_profile": "weak_visibility",
+    "competitors": ["Lilac City Electric", "Northwest Current Co"]
+  },
+  {
+    "id": "harbor_floral_boston",
+    "business_name": "Harbor Floral Co",
+    "industry": "florist",
+    "city": "Boston, MA",
+    "website_url": "https://harborfloral.example",
+    "fixture_profile": "weak_visibility",
+    "competitors": ["Beacon Bloom Studio", "Commonwealth Florals"]
+  },
+  {
+    "id": "sterling_tax_charlotte",
+    "business_name": "Sterling Tax Advisors",
+    "industry": "accountant",
+    "city": "Charlotte, NC",
+    "website_url": "https://sterlingtax.example",
+    "fixture_profile": "weak_visibility",
+    "competitors": ["Queen City Tax Group", "Piedmont Ledger"]
+  },
+  {
+    "id": "mosaic_medspa_dallas",
+    "business_name": "Mosaic Med Spa",
+    "industry": "med spa",
+    "city": "Dallas, TX",
+    "website_url": "https://mosaicmedspa.example",
+    "fixture_profile": "listing_gap",
+    "competitors": ["Uptown Skin Studio", "Dallas Glow Collective"]
+  },
+  {
+    "id": "fieldstone_accounting_atlanta",
+    "business_name": "Fieldstone Accounting",
+    "industry": "accountant",
+    "city": "Atlanta, GA",
+    "website_url": "https://fieldstoneaccounting.example",
+    "fixture_profile": "listing_gap",
+    "competitors": ["Peachtree Tax Partners", "BeltLine Bookkeeping"]
+  },
+  {
+    "id": "peak_roofing_reno",
+    "business_name": "Peak Roofing Reno",
+    "industry": "roofing contractor",
+    "city": "Reno, NV",
+    "website_url": "https://peakroofingreno.example",
+    "fixture_profile": "crawl_blocked",
+    "competitors": ["High Desert Roofing", "Truckee Roof Works"]
+  },
+  {
+    "id": "shoreline_hvac_longbeach",
+    "business_name": "Shoreline HVAC",
+    "industry": "hvac contractor",
+    "city": "Long Beach, CA",
+    "website_url": "https://shorelinehvac.example",
+    "fixture_profile": "crawl_blocked",
+    "competitors": ["Pacific Air Systems", "Belmont Climate Control"]
+  }
+]

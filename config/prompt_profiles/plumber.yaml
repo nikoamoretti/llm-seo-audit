@@ -1,0 +1,20 @@
+display_name: Plumber
+aliases:
+  - plumber
+  - plumbing
+  - drain cleaning
+  - water heater
+  - sewer
+clusters:
+  comparison:
+    - template: "How does {business_name} compare to {competitor_names} for emergency plumbing in {service_area}?"
+      requires_competitors: true
+  urgency:
+    - template: "I have a burst pipe in {service_area}. Which plumber should I call right now?"
+  trust:
+    - template: "Which plumber in {city} is known for showing up on time and doing clean work?"
+  price:
+    - template: "How much does emergency plumbing usually cost in {service_area}?"
+  symptom_problem:
+    - template: "Who fixes a leaking water heater in {service_area}?"
+    - template: "What plumber in {service_area} is best for a clogged drain?"

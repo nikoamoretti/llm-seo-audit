@@ -1,0 +1,50 @@
+version: score_v2
+readiness:
+  weights:
+    crawlability: 0.25
+    entity_completeness: 0.2
+    content_coverage: 0.2
+    trust_signals: 0.15
+    listing_presence: 0.2
+visibility:
+  weights:
+    mention_rate: 0.25
+    recommendation_rate: 0.2
+    citation_rate: 0.2
+    official_citation_share: 0.15
+    competitor_gap: 0.1
+    discovery_strength: 0.1
+  prompt_quality_weights:
+    mentioned: 0.35
+    recommended: 0.25
+    cited: 0.2
+    official_citation: 0.1
+    position: 0.1
+final:
+  weights:
+    readiness: 0.45
+    visibility: 0.55
+penalties:
+  noindex: 20
+  robots_blocked: 15
+  website_inaccessible: 20
+thresholds:
+  content:
+    minimum_word_count: 300
+    strong_word_count: 1200
+    supporting_page_target: 3
+  trust:
+    trust_signal_target: 3
+  listings:
+    review_count_good: 25
+  visibility:
+    branded_cluster_name: branded
+    discovery_clusters:
+      - discovery
+      - comparison
+      - urgency
+      - trust
+      - price
+      - symptom_problem
+      - follow_up
+    low_component_score: 40

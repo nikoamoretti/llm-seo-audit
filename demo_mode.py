@@ -183,6 +183,9 @@ class DemoAuditor:
         return "\n".join(lines)
 
     def _simulate_web_presence(self) -> dict:
+        google_found = random.random() < 0.6
+        yelp_found = random.random() < 0.4
+
         return {
             # Core website checks
             "has_schema_markup": random.random() < 0.3,
@@ -214,7 +217,12 @@ class DemoAuditor:
             "has_hours": random.random() < 0.5,
             "has_address": random.random() < 0.6,
             # Directories
-            "google_business_found": random.random() < 0.6,
-            "yelp_found": random.random() < 0.4,
-            "bbb_found": random.random() < 0.25,
+            "google_business_found": google_found,
+            "google_rating": round(random.uniform(3.8, 4.9), 1) if google_found else None,
+            "google_review_count": random.randint(12, 420) if google_found else None,
+            "google_place_id": f"demo-place-{random.randint(1000, 9999)}" if google_found else None,
+            "yelp_found": yelp_found,
+            "yelp_rating": round(random.uniform(3.5, 5.0), 1) if yelp_found else None,
+            "yelp_review_count": random.randint(8, 320) if yelp_found else None,
+            "yelp_url": "https://www.yelp.com/biz/demo-business" if yelp_found else None,
         }

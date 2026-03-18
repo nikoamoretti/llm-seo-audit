@@ -1,0 +1,23 @@
+display_name: Default
+aliases: []
+clusters:
+  branded:
+    - template: "What do people say about {business_name} in {service_area}?"
+    - template: "Would you recommend {business_name} for {industry} in {service_area}?"
+  discovery:
+    - template: "Who are the best {industry} providers in {city}?"
+    - template: "What are the top-rated {industry} options near {service_area}?"
+  comparison:
+    - template: "Compare the best {industry} options in {city}."
+    - template: "How does {business_name} compare to {competitor_names} for {industry} in {service_area}?"
+      requires_competitors: true
+  urgency:
+    - template: "I need {industry} help quickly in {service_area}. Who should I call?"
+  trust:
+    - template: "Which {industry} business in {city} is the most trusted?"
+  price:
+    - template: "What should I expect to pay for {industry} in {service_area}?"
+  symptom_problem:
+    - template: "Who can help with a common {industry} problem in {service_area}?"
+  follow_up:
+    - template: "If my first choice for {industry} in {service_area} is unavailable, who is the next best option?"

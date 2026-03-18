@@ -1,0 +1,21 @@
+version: weekly_v1
+description: Stable prompt set for weekly engine-drift checks.
+prompts:
+  - id: local_discovery
+    cluster: discovery
+    template: "What are the best {industry} businesses in {city}?"
+  - id: local_comparison
+    cluster: comparison
+    template: "Compare the best {industry} options in {city}"
+  - id: local_trust
+    cluster: trust
+    template: "Who is the most trusted {industry} in {city}?"
+  - id: price_sensitivity
+    cluster: price
+    template: "Which {industry} in {city} gives the best value for the price?"
+  - id: urgency
+    cluster: urgency
+    template: "I need a reliable {industry} in {city} right away. Who should I call?"
+  - id: symptom_problem
+    cluster: symptom_problem
+    template: "I have a specific {industry} problem in {city}. What business should I consider first?"

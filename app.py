@@ -8,54 +8,33 @@ GEO_Score = 0.55 * V + 0.45 * R
 import asyncio
 import json
 import os
-import re
-import time
-import requests
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
-from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, JSONResponse
+import requests
+
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
-from llm_querier import LLMQuerier
 from analyzer import ResponseAnalyzer
-from web_presence import WebPresenceChecker
 from demo_mode import DemoAuditor
+from llm_querier import LLMQuerier
+from src.core.audit_builder import build_audit_run, prompt_results_from_llm_results
+from src.core.models import CheckDimension, ReadinessResult, VisibilityResult
+from src.presentation import AuditUIResponse, build_audit_ui_response
+from src.prompts.loader import load_prompt_profile, select_prompt_profile
+from src.prompts.renderer import render_prompt_bank
+from src.scoring.final import score_final
+from src.scoring.readiness import score_readiness
+from src.scoring.visibility import score_visibility
+from web_presence import WebPresenceChecker
 
 app = FastAPI(title="GEO Audit Tool")
 executor = ThreadPoolExecutor(max_workers=4)
-
-# ─── Prompt Bank with Intent Clusters ────────────────────────────────
-# Head queries: broad "best X in Y" discovery
-# Mid-tail: specific need or use case
-# Comparison: "X vs competitors"
-# Policy/Trust: trust, reliability, safety queries
-
-PROMPT_BANK = {
-    "head": [
-        "What are the best {industry} businesses in {city}?",
-        "Can you recommend a good {industry} in {city}?",
-        "Top rated {industry} near {city}",
-    ],
-    "mid_tail": [
-        "I'm looking for a {industry} in {city} with great reviews and reasonable prices. What do you suggest?",
-        "What {industry} in {city} would you recommend for a first-time visitor?",
-        "I need a reliable {industry} in {city} — who should I go with?",
-    ],
-    "comparison": [
-        "Who are the top 5 {industry} businesses in {city} and how do they compare?",
-        "Which {industry} companies in {city} have the best reputation?",
-        "Compare the best {industry} options in {city}",
-    ],
-    "trust": [
-        "Who is the most trusted {industry} in {city}?",
-        "Which {industry} in {city} has the best customer service?",
-        "What {industry} in {city} do locals recommend the most?",
-    ],
-}
 
 
 class AuditRequest(BaseModel):
@@ -81,27 +60,37 @@ def detect_api_keys() -> dict:
     return keys
 
 
-def build_prompt_list(industry: str, city: str) -> list:
-    """Build full prompt list from all intent clusters."""
-    prompts = []
-    for cluster, templates in PROMPT_BANK.items():
-        for tmpl in templates:
-            prompts.append({
-                "text": tmpl.format(industry=industry, city=city),
-                "cluster": cluster,
-            })
-    return prompts
+def build_prompt_list(
+    business_name: str,
+    industry: str,
+    city: str,
+    service_area: Optional[str] = None,
+    competitors: Optional[list[str]] = None,
+) -> list[dict[str, str]]:
+    """Build prompts from a vertical-specific prompt profile."""
+    profile_slug = select_prompt_profile(industry)
+    profile = load_prompt_profile(profile_slug)
+    return render_prompt_bank(
+        profile,
+        business_name=business_name,
+        industry=industry,
+        city=city,
+        service_area=service_area or city,
+        competitors=competitors,
+    )
 
 
 def _query_single(querier, provider, prompt_info, analyzer):
     """Query a single provider+prompt combo. Used for parallel execution."""
     try:
-        response = querier.query(provider, prompt_info["text"])
+        engine_response = querier.query_structured(provider, prompt_info["text"])
+        response = engine_response.raw_text
         analysis = analyzer.analyze_response(response, prompt_info["text"])
         return {
             "query": prompt_info["text"],
             "cluster": prompt_info["cluster"],
             "response": response,
+            "engine_response": asdict(engine_response),
             "analysis": analysis,
         }
     except Exception as e:
@@ -114,7 +103,12 @@ def _query_single(querier, provider, prompt_info, analyzer):
 
 
 def run_live_audit(business_name, industry, city, website_url, phone, api_keys):
-    prompts = build_prompt_list(industry, city)
+    prompts = build_prompt_list(
+        business_name=business_name,
+        industry=industry,
+        city=city,
+        service_area=city,
+    )
     querier = LLMQuerier(api_keys)
 
     known_facts = {"city": city, "industry": industry}
@@ -137,10 +131,8 @@ def run_live_audit(business_name, industry, city, website_url, phone, api_keys):
                 futures[pool.submit(_query_single, querier, provider, prompt_info, analyzer)] = key
 
         # Submit web checks in parallel too
-        web_future = None
-        if website_url:
-            checker = WebPresenceChecker()
-            web_future = pool.submit(checker.check_all, business_name, website_url, city)
+        checker = WebPresenceChecker()
+        web_future = pool.submit(checker.check_all, business_name, website_url or "", city)
 
         # Collect LLM results
         llm_results = {provider: [] for provider in api_keys}
@@ -160,412 +152,101 @@ def run_live_audit(business_name, industry, city, website_url, phone, api_keys):
     return llm_results, web_results
 
 
-# ─── Readiness Layer (Static) ─────────────────────────────────────────
-# R = 0.25*R_LocalEntity + 0.20*R_Index + 0.15*R_Schema + 0.20*R_Trust + 0.20*R_Content
-
 def compute_readiness_score(web_results: dict) -> dict:
-    """Compute the Readiness layer score from static web checks."""
-    if not web_results:
-        return {
-            "R": 0,
-            "R_local_entity": {"score": 0, "checks": {}},
-            "R_index": {"score": 0, "checks": {}},
-            "R_schema": {"score": 0, "checks": {}},
-            "R_trust": {"score": 0, "checks": {}},
-            "R_content": {"score": 0, "checks": {}},
+    """Legacy wrapper over score_v2 readiness results."""
+    readiness = score_readiness(web_results)
+    payload = {"R": readiness.score}
+    payload.update(
+        {
+            key: dimension.model_dump(mode="json")
+            for key, dimension in readiness.dimensions.items()
         }
-
-    # R_LocalEntity (GBP, NAP, review indicators)
-    local_checks = {
-        "Found on Google Business": web_results.get("google_business_found", False),
-        "Phone number on website": web_results.get("has_contact_info", False),
-        "Business hours on website": web_results.get("has_hours", False),
-        "Street address on website": web_results.get("has_address", False),
-        "Found on Yelp": web_results.get("yelp_found", False),
-    }
-    r_local = int(sum(local_checks.values()) / len(local_checks) * 100)
-
-    # R_Index (Crawlability: robots.txt, sitemap, canonical, no noindex)
-    index_checks = {
-        "Website loads correctly": web_results.get("website_accessible", False),
-        "Has a robots.txt file": web_results.get("robots_txt_exists", False),
-        "AI crawlers are allowed in": web_results.get("robots_allows_crawl", True),
-        "Has a sitemap for AI to follow": web_results.get("sitemap_exists", False),
-        "Pages point to their correct URL": web_results.get("has_canonical", False),
-        "Not blocking AI from reading pages": not web_results.get("has_noindex", False),
-    }
-    r_index = int(sum(index_checks.values()) / len(index_checks) * 100)
-
-    # R_Schema (JSON-LD, LocalBusiness, FAQ)
-    schema_checks = {
-        "Structured data on site": web_results.get("has_schema_markup", False),
-        "Business type labeled for AI": web_results.get("has_local_business_schema", False),
-        "FAQ markup for AI to read": web_results.get("has_faq_schema", False),
-        "Social sharing info set up": web_results.get("has_og_tags", False),
-    }
-    r_schema = int(sum(schema_checks.values()) / len(schema_checks) * 100)
-
-    # R_Trust (SSL, directories, page speed)
-    trust_checks = {
-        "Site is secure (HTTPS)": web_results.get("ssl_valid", False),
-        "Page loads fast (under 3 sec)": web_results.get("fast_load", False),
-        "Found on Better Business Bureau": web_results.get("bbb_found", False),
-        "Works well on mobile phones": web_results.get("mobile_friendly_meta", False),
-    }
-    r_trust = int(sum(trust_checks.values()) / len(trust_checks) * 100)
-
-    # R_Content (answer blocks, FAQ, meta desc, word count)
-    content_checks = {
-        "Has a page description for search": web_results.get("has_meta_description", False),
-        "Has a page title": web_results.get("has_title_tag", False),
-        "Has Q&A-style content AI can quote": web_results.get("has_answer_blocks", False),
-        "Has an FAQ section": web_results.get("has_faq_section", False),
-        "Enough text for AI to learn from": (web_results.get("word_count", 0) or 0) > 300,
-    }
-    r_content = int(sum(content_checks.values()) / len(content_checks) * 100)
-
-    # Composite Readiness
-    R = int(
-        0.25 * r_local
-        + 0.20 * r_index
-        + 0.15 * r_schema
-        + 0.20 * r_trust
-        + 0.20 * r_content
     )
-
-    return {
-        "R": R,
-        "R_local_entity": {"score": r_local, "label": "Online Listings", "checks": local_checks,
-                           "description": "Can AI find your business on Google, Yelp, and other directories?"},
-        "R_index": {"score": r_index, "label": "AI Can Find You", "checks": index_checks,
-                    "description": "Is your website set up so AI systems can actually read and access it?"},
-        "R_schema": {"score": r_schema, "label": "Machine-Readable Info", "checks": schema_checks,
-                     "description": "Does your site have structured data that helps AI understand what your business does?"},
-        "R_trust": {"score": r_trust, "label": "Trust & Speed", "checks": trust_checks,
-                    "description": "Is your site secure, fast, and listed on trusted directories?"},
-        "R_content": {"score": r_content, "label": "AI-Ready Content", "checks": content_checks,
-                      "description": "Does your site have clear answers to the questions people ask AI?"},
-    }
-
-
-# ─── Visibility Layer (Dynamic) ──────────────────────────────────────
-# V = mean of per-prompt visibility scores across all providers and prompts
+    return payload
 
 def compute_visibility_score(llm_results: dict) -> dict:
-    """Compute the Visibility layer score from LLM query results."""
-    all_scores = []
-    per_llm = {}
-    all_competitors = {}
-    all_attributes = []
-    per_cluster = {}
-
-    for provider, responses in llm_results.items():
-        provider_scores = []
-        mentioned_count = 0
-        cited_count = 0
-        positions = []
-        competitors = {}
-        attributes = []
-
-        for r in responses:
-            a = r["analysis"]
-            v_score = a.get("visibility_score", 0)
-            provider_scores.append(v_score)
-            all_scores.append(v_score)
-
-            cluster = r.get("cluster", "head")
-            if cluster not in per_cluster:
-                per_cluster[cluster] = []
-            per_cluster[cluster].append(v_score)
-
-            if a.get("mentioned"):
-                mentioned_count += 1
-            if a.get("cited"):
-                cited_count += 1
-            if a.get("position") is not None:
-                positions.append(a["position"])
-
-            for comp in a.get("competitors", []):
-                competitors[comp] = competitors.get(comp, 0) + 1
-                all_competitors[comp] = all_competitors.get(comp, 0) + 1
-            attributes.extend(a.get("attributes", []))
-            all_attributes.extend(a.get("attributes", []))
-
-        total_queries = len(responses)
-        avg_visibility = sum(provider_scores) / len(provider_scores) if provider_scores else 0
-        mention_rate = mentioned_count / total_queries if total_queries > 0 else 0
-        citation_rate = cited_count / total_queries if total_queries > 0 else 0
-        avg_position = sum(positions) / len(positions) if positions else None
-
-        per_llm[provider] = {
-            "visibility_score": round(avg_visibility, 1),
-            "mention_rate": round(mention_rate * 100, 1),
-            "citation_rate": round(citation_rate * 100, 1),
-            "avg_position": round(avg_position, 1) if avg_position else None,
-            "total_queries": total_queries,
-            "times_mentioned": mentioned_count,
-            "times_cited": cited_count,
-            "top_competitors": dict(sorted(competitors.items(), key=lambda x: -x[1])[:10]),
-            "attributes_cited": list(set(attributes)),
-        }
-
-    V = sum(all_scores) / len(all_scores) if all_scores else 0
-
-    # Per-cluster breakdown
-    cluster_scores = {}
-    for cluster, scores in per_cluster.items():
-        cluster_scores[cluster] = {
-            "avg_score": round(sum(scores) / len(scores), 1) if scores else 0,
-            "query_count": len(scores),
-        }
-
+    """Legacy wrapper over score_v2 visibility results."""
+    visibility = score_visibility(prompt_results_from_llm_results(llm_results))
     return {
-        "V": round(V, 1),
-        "per_llm": per_llm,
-        "per_cluster": cluster_scores,
-        "overall_mention_rate": round(
-            sum(1 for s in all_scores if s >= 40) / len(all_scores) * 100, 1
-        ) if all_scores else 0,
-        "top_competitors": dict(sorted(all_competitors.items(), key=lambda x: -x[1])[:15]),
-        "attributes_cited": list(set(all_attributes)),
+        "V": round(visibility.score, 1),
+        "overall_mention_rate": visibility.overall_mention_rate,
+        "dimensions": {
+            key: dimension.model_dump(mode="json")
+            for key, dimension in visibility.dimensions.items()
+        },
+        "per_llm": {
+            provider: data.model_dump(mode="json")
+            for provider, data in visibility.per_llm.items()
+        },
+        "per_cluster": {
+            cluster: data.model_dump(mode="json")
+            for cluster, data in visibility.per_cluster.items()
+        },
+        "top_competitors": visibility.top_competitors,
+        "attributes_cited": visibility.attributes_cited,
     }
 
-
-# ─── Composite GEO Score ─────────────────────────────────────────────
-
 def compute_geo_score(readiness: dict, visibility: dict, has_web: bool) -> dict:
-    """Compute composite: GEO_Score = 0.55 * V + 0.45 * R"""
-    R = readiness["R"]
-    V = visibility["V"]
-
-    if has_web:
-        geo_score = int(0.55 * V + 0.45 * R)
-    else:
-        # No website: score based purely on visibility
-        geo_score = int(V)
-
+    """Legacy wrapper over score_v2 final score."""
+    readiness_model = ReadinessResult(
+        score=int(readiness.get("R", 0)),
+        dimensions={
+            key: CheckDimension.model_validate(value)
+            for key, value in readiness.items()
+            if key != "R" and isinstance(value, dict)
+        },
+    )
+    visibility_model = VisibilityResult(
+        score=float(visibility.get("V", 0)),
+        overall_mention_rate=float(visibility.get("overall_mention_rate", 0)),
+        dimensions={
+            key: CheckDimension.model_validate(value)
+            for key, value in visibility.get("dimensions", {}).items()
+            if isinstance(value, dict)
+        },
+        per_llm={},
+        per_cluster={},
+        top_competitors=visibility.get("top_competitors", {}),
+        attributes_cited=visibility.get("attributes_cited", []),
+        prompt_results=[],
+    )
+    score = score_final(
+        readiness=readiness_model,
+        visibility=visibility_model,
+        web_presence={"website_accessible": bool(has_web)},
+    )
     return {
-        "geo_score": geo_score,
-        "readiness_score": R,
-        "visibility_score": round(V, 1),
-        "formula": "0.55 × Visibility + 0.45 × Readiness",
+        "geo_score": score.final,
+        "readiness_score": score.readiness,
+        "visibility_score": round(score.visibility, 1),
+        "formula": score.formula,
         "readiness": readiness,
         "visibility": visibility,
     }
 
 
-# ─── Recommendations Engine ──────────────────────────────────────────
-
-def generate_recommendations(scores: dict, web_results: dict) -> list:
-    """Generate prioritized recommendations based on the P0/P1/P2 framework."""
-    recs = []
-    R = scores["readiness"]
-    V = scores["visibility"]
-    geo = scores["geo_score"]
-
-    # === P0: Fix These First — You're Invisible Without Them ===
-
-    if web_results.get("has_noindex"):
-        recs.append({
-            "priority": "P0", "category": "Website Access",
-            "title": "Your website is telling AI to ignore it",
-            "detail": "There's a hidden tag on your site that literally tells Google, ChatGPT, and other AI systems: 'don't read this page.' That means no AI can ever recommend you. A web developer can fix this in 5 minutes by removing the 'noindex' tag.",
-        })
-
-    if web_results.get("robots_allows_crawl") is False:
-        recs.append({
-            "priority": "P0", "category": "Website Access",
-            "title": "Your website is blocking AI from reading it",
-            "detail": "There's a file on your site (robots.txt) that blocks all search engines and AI systems from reading your pages. It's like having a store with the blinds closed — nobody can see what's inside. Ask your web developer to update it.",
-        })
-
-    if web_results.get("website_accessible") is False and web_results:
-        recs.append({
-            "priority": "P0", "category": "Website Access",
-            "title": "Your website is down or password-protected",
-            "detail": "We couldn't load your website — it's either offline, behind a password, or returning errors. AI can only recommend businesses whose websites it can actually read. Make sure your site is publicly accessible.",
-        })
-
-    if web_results.get("google_business_found") is False:
-        recs.append({
-            "priority": "P0", "category": "Online Listings",
-            "title": "You're not on Google Business Profile",
-            "detail": "This is the #1 most important thing you can do. Google's AI reads your Google Business listing to recommend local businesses. Without one, you're invisible. Go to business.google.com, claim your listing, and fill in everything: photos, hours, services, and your phone number.",
-        })
-
-    if V.get("V", 0) < 15:
-        recs.append({
-            "priority": "P0", "category": "AI Visibility",
-            "title": "AI assistants almost never mention your business",
-            "detail": "When people ask ChatGPT, Claude, or other AI tools for a recommendation in your area, your business almost never comes up. This is the core problem this audit measures. The fixes below will help change that.",
-        })
-
-    # === P1: High Impact — These Will Move the Needle ===
-
-    if web_results.get("has_schema_markup") is False:
-        recs.append({
-            "priority": "P1", "category": "Machine-Readable Info",
-            "title": "Add structured data so AI understands your business",
-            "detail": "Right now, AI has to guess what your business does by reading your website like a human. Structured data is a special code block that tells AI exactly what you are, where you're located, your hours, and your services. Sites with this are 78% more likely to be recommended by AI. Ask your web developer to add 'LocalBusiness JSON-LD' markup.",
-        })
-
-    if web_results.get("has_local_business_schema") is False and web_results.get("has_schema_markup"):
-        recs.append({
-            "priority": "P1", "category": "Machine-Readable Info",
-            "title": "Your structured data doesn't identify your business type",
-            "detail": "Your site has some structured data, but it doesn't tell AI what kind of business you are (like 'Restaurant' or 'Dentist'). Adding this specific label helps AI recommend you for the right searches.",
-        })
-
-    if web_results.get("has_answer_blocks") is False and web_results:
-        recs.append({
-            "priority": "P1", "category": "AI-Ready Content",
-            "title": "Add a Q&A section that AI can quote directly",
-            "detail": "When someone asks AI 'What's the best [your industry] in [your city]?', AI looks for ready-made answers on websites. Add a FAQ section with 3-5 questions and clear, detailed answers (about 150 words each). Sites with these are 4x more likely to be quoted by AI.",
-        })
-
-    if web_results.get("yelp_found") is False:
-        recs.append({
-            "priority": "P1", "category": "Online Listings",
-            "title": "You're not on Yelp",
-            "detail": "ChatGPT gets its local business data from Yelp (through Bing). If you're not on Yelp, ChatGPT literally can't find you. Claim your free Yelp business page and ask happy customers to leave reviews there.",
-        })
-
-    if web_results.get("sitemap_exists") is False and web_results:
-        recs.append({
-            "priority": "P1", "category": "Website Access",
-            "title": "No sitemap — AI doesn't know all your pages exist",
-            "detail": "A sitemap is like a table of contents for your website that helps AI find all your pages. Without one, AI might miss important pages about your services. Your web developer can generate one automatically.",
-        })
-
-    if web_results.get("has_canonical") is False and web_results:
-        recs.append({
-            "priority": "P1", "category": "Website Access",
-            "title": "Pages don't have a canonical URL set",
-            "detail": "This is a small technical fix that tells AI which version of each page is the 'official' one. Without it, AI might get confused by duplicate pages and spread your ranking power thin. A quick fix for your web developer.",
-        })
-
-    if web_results.get("ssl_valid") is False and web_results:
-        recs.append({
-            "priority": "P1", "category": "Trust & Speed",
-            "title": "Your site isn't secure (no HTTPS)",
-            "detail": "Your website doesn't have an SSL certificate, which means browsers show a 'Not Secure' warning. AI systems trust secure sites more and are less likely to recommend insecure ones. Most web hosts offer free SSL — just turn it on.",
-        })
-
-    if web_results.get("has_meta_description") is False and web_results:
-        recs.append({
-            "priority": "P1", "category": "AI-Ready Content",
-            "title": "Your site has no description for search engines",
-            "detail": "When AI and Google look at your site, there's no summary telling them what you do. They have to guess — and they often get it wrong. Add a clear 1-2 sentence description of your business, location, and what makes you special.",
-        })
-
-    # === P2: Growth — Take It to the Next Level ===
-
-    recs.append({
-        "priority": "P1", "category": "AI Visibility",
-        "title": "Get listed on Bing (it powers ChatGPT)",
-        "detail": "Most people don't know this: ChatGPT uses Bing, not Google, when searching for local businesses. Almost nobody optimizes for Bing, so it's a huge opportunity. Go to bingplaces.com and claim your free listing.",
-    })
-
-    if web_results.get("has_faq_schema") is False and web_results:
-        recs.append({
-            "priority": "P2", "category": "AI-Ready Content",
-            "title": "Add FAQ markup so AI can directly read your Q&As",
-            "detail": "If you have a FAQ section, add special markup (FAQ schema) so AI systems can read each question and answer individually. This makes it much easier for AI to pull your answers into its responses when someone asks a relevant question.",
-        })
-
-    recs.append({
-        "priority": "P2", "category": "Trust & Speed",
-        "title": "Get mentioned on Reddit and local forums",
-        "detail": "AI tools like Perplexity and ChatGPT love Reddit. When real people recommend your business in Reddit threads, AI picks that up and is more likely to recommend you too. Encourage happy customers to mention you in local subreddits.",
-    })
-
-    recs.append({
-        "priority": "P2", "category": "AI-Ready Content",
-        "title": "Update your website content every 3 months",
-        "detail": "AI strongly prefers fresh content. If your website hasn't been updated in months, AI treats it as stale and is less likely to cite it. Even small updates — a new blog post, updated hours, seasonal specials — signal that you're active and relevant.",
-    })
-
-    if web_results.get("bbb_found") is False:
-        recs.append({
-            "priority": "P2", "category": "Trust & Speed",
-            "title": "Get a Better Business Bureau listing",
-            "detail": "A BBB listing adds credibility. AI systems see it as a trust signal, especially for service businesses like contractors, lawyers, and financial services. It's not as critical as Google or Yelp, but it helps.",
-        })
-
-    # Competitor gap analysis
-    competitors = V.get("top_competitors", {})
-    if competitors:
-        top = list(competitors.keys())[:3]
-        recs.append({
-            "priority": "P2", "category": "AI Visibility",
-            "title": f"Study what these competitors are doing right: {', '.join(top)}",
-            "detail": "These businesses come up the most when AI recommends businesses in your space. Look at what they're doing: Are they on Yelp? Do they have lots of reviews? Is their website well set up? Copy what works and do it better.",
-        })
-
-    # Per-cluster analysis
-    per_cluster = V.get("per_cluster", {})
-    weakest_cluster = None
-    weakest_score = 100
-    for cluster, data in per_cluster.items():
-        if data["avg_score"] < weakest_score:
-            weakest_score = data["avg_score"]
-            weakest_cluster = cluster
-
-    cluster_labels = {
-        "head": "general 'best of' questions",
-        "mid_tail": "specific need questions",
-        "comparison": "comparison questions",
-        "trust": "'who's most trusted' questions",
-    }
-    if weakest_cluster and weakest_score < 30:
-        recs.append({
-            "priority": "P1", "category": "AI Visibility",
-            "title": f"You're weakest when people ask {cluster_labels.get(weakest_cluster, weakest_cluster)}",
-            "detail": f"When people ask AI {cluster_labels.get(weakest_cluster, weakest_cluster)} about your industry, you almost never come up. This is a specific type of question real customers ask. Focus on building the right content and reputation to show up for these searches.",
-        })
-
-    # Sort by priority
-    priority_order = {"P0": 0, "P1": 1, "P2": 2}
-    recs.sort(key=lambda r: priority_order.get(r["priority"], 3))
-
-    return recs
-
-
 # ─── API Endpoints ────────────────────────────────────────────────────
 
-@app.post("/api/audit")
+@app.post("/api/audit", response_model=AuditUIResponse)
 async def run_audit(req: AuditRequest):
     api_keys = detect_api_keys()
 
     if req.demo or not api_keys:
         demo = DemoAuditor(req.business_name, req.industry, req.city, req.website_url)
         results = demo.run()
-        readiness = compute_readiness_score(results["web_presence"])
-        visibility = compute_visibility_score(results["llm_results"])
-        scores = compute_geo_score(readiness, visibility, bool(req.website_url))
-        recs = generate_recommendations(scores, results["web_presence"])
-
-        return {
-            "mode": "demo",
-            "business_name": req.business_name,
-            "industry": req.industry,
-            "city": req.city,
-            "website_url": req.website_url,
-            "timestamp": datetime.now().isoformat(),
-            "scores": scores,
-            "recommendations": recs,
-            "llm_responses": {
-                p: [{
-                    "query": r["query"],
-                    "cluster": r.get("cluster", "head"),
-                    "mentioned": r["analysis"]["mentioned"],
-                    "cited": r["analysis"].get("cited", False),
-                    "position": r["analysis"]["position"],
-                    "visibility_score": r["analysis"].get("visibility_score", 0),
-                } for r in resps]
-                for p, resps in results["llm_results"].items()
-            },
-        }
+        audit_run = build_audit_run(
+            mode="demo",
+            business_name=req.business_name,
+            industry=req.industry,
+            city=req.city,
+            website_url=req.website_url,
+            phone=req.phone,
+            web_presence=results["web_presence"],
+            llm_results=results["llm_results"],
+            api_keys_used=results.get("api_keys_available", []),
+            timestamp=results.get("timestamp"),
+        )
+        return build_audit_ui_response(audit_run)
 
     # Live audit
     loop = asyncio.get_event_loop()
@@ -575,36 +256,19 @@ async def run_audit(req: AuditRequest):
         req.website_url, req.phone, api_keys
     )
 
-    readiness = compute_readiness_score(web_results)
-    visibility = compute_visibility_score(llm_results)
-    scores = compute_geo_score(readiness, visibility, bool(web_results))
-    recs = generate_recommendations(scores, web_results)
-
-    return {
-        "mode": "live",
-        "business_name": req.business_name,
-        "industry": req.industry,
-        "city": req.city,
-        "website_url": req.website_url,
-        "timestamp": datetime.now().isoformat(),
-        "api_keys_used": list(api_keys.keys()),
-        "scores": scores,
-        "recommendations": recs,
-        "web_presence": web_results,
-        "llm_responses": {
-            p: [{
-                "query": r["query"],
-                "cluster": r.get("cluster", "head"),
-                "response": r["response"][:500],
-                "mentioned": r["analysis"]["mentioned"],
-                "cited": r["analysis"].get("cited", False),
-                "position": r["analysis"]["position"],
-                "visibility_score": r["analysis"].get("visibility_score", 0),
-                "sentiment": r["analysis"].get("sentiment", 0),
-            } for r in resps]
-            for p, resps in llm_results.items()
-        },
-    }
+    audit_run = build_audit_run(
+        mode="live",
+        business_name=req.business_name,
+        industry=req.industry,
+        city=req.city,
+        website_url=req.website_url,
+        phone=req.phone,
+        web_presence=web_results,
+        llm_results=llm_results,
+        api_keys_used=list(api_keys.keys()),
+        timestamp=datetime.now().isoformat(),
+    )
+    return build_audit_ui_response(audit_run)
 
 
 class LookupRequest(BaseModel):
