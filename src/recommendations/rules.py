@@ -3,6 +3,7 @@ from __future__ import annotations
 from src.core.models import AuditRun, Recommendation
 from src.recommendations.explainer import explain_recommendation
 from src.scoring.final import load_score_config
+from src.scoring.visibility import CitationEvidenceSummary, summarize_citation_evidence
 
 
 PRIORITY_ORDER = {"P0": 0, "P1": 1, "P2": 2}
@@ -13,6 +14,7 @@ def build_recommendations(audit_run: AuditRun) -> list[Recommendation]:
     low_component_score = int(config["thresholds"]["visibility"]["low_component_score"])
     web_presence = audit_run.web_presence
     visibility_dimensions = audit_run.visibility.dimensions
+    citation_evidence = summarize_citation_evidence(audit_run.visibility.prompt_results)
     recommendations: list[Recommendation] = []
 
     if web_presence.get("has_noindex") is True:
@@ -95,17 +97,12 @@ def build_recommendations(audit_run: AuditRun) -> list[Recommendation]:
 
     official_citation_share = visibility_dimensions.get("official_citation_share")
     if official_citation_share and official_citation_share.score < low_component_score:
-        recommendations.append(
-            explain_recommendation(
-                priority="P1",
-                category="On-Site Evidence",
-                title="Publish more quotable first-party facts on the site",
-                why_it_matters="The business is being cited without enough official-domain support, which weakens authority in answer generation.",
-                evidence=official_citation_share.evidence or ["visibility.official_citation_share=0"],
-                impacted_components=["citation_rate", "official_citation_share"],
-                implementation_hint="Add precise service, location, hours, and FAQ content to crawlable pages that link back to the homepage and contact page.",
-            )
+        recommendation = _build_citation_support_recommendation(
+            official_citation_share_evidence=official_citation_share.evidence or ["visibility.official_citation_share=0"],
+            citation_evidence=citation_evidence,
         )
+        if recommendation is not None:
+            recommendations.append(recommendation)
 
     discovery_strength = visibility_dimensions.get("discovery_strength")
     if discovery_strength and discovery_strength.score < low_component_score:
@@ -138,3 +135,74 @@ def build_recommendations(audit_run: AuditRun) -> list[Recommendation]:
 
     recommendations.sort(key=lambda recommendation: PRIORITY_ORDER[recommendation.priority])
     return recommendations
+
+
+def _build_citation_support_recommendation(
+    *,
+    official_citation_share_evidence: list[str],
+    citation_evidence: CitationEvidenceSummary,
+) -> Recommendation | None:
+    evidence = official_citation_share_evidence + [
+        f"visibility.citation_evidence_state={citation_evidence.state}"
+    ]
+    implementation_hint = (
+        "Add precise service, location, hours, and FAQ facts to crawlable pages so future answers "
+        "have first-party details to cite."
+    )
+
+    if citation_evidence.state == "official_only":
+        return None
+    if citation_evidence.state == "third_party_only":
+        return explain_recommendation(
+            priority="P1",
+            category="On-Site Evidence",
+            title="Publish more quotable first-party facts on the site",
+            why_it_matters=(
+                "Third-party sources were cited, but the official site was not, so first-party "
+                "support is currently weak."
+            ),
+            evidence=evidence,
+            impacted_components=["citation_rate", "official_citation_share"],
+            implementation_hint=implementation_hint,
+        )
+    if citation_evidence.state == "mixed":
+        return explain_recommendation(
+            priority="P1",
+            category="On-Site Evidence",
+            title="Publish more quotable first-party facts on the site",
+            why_it_matters=(
+                "Both official and third-party sources were cited, but official-domain support is "
+                "still weak relative to third-party sources."
+            ),
+            evidence=evidence,
+            impacted_components=["citation_rate", "official_citation_share"],
+            implementation_hint=implementation_hint,
+        )
+    if citation_evidence.state == "no_citations":
+        return explain_recommendation(
+            priority="P1",
+            category="On-Site Evidence",
+            title="Give answer engines clearer first-party facts to cite",
+            why_it_matters=(
+                "No citations were captured in this run, so the audit cannot yet confirm which "
+                "sources answer engines rely on for this business."
+            ),
+            evidence=evidence,
+            impacted_components=["citation_rate", "official_citation_share"],
+            implementation_hint=implementation_hint,
+        )
+    return explain_recommendation(
+        priority="P1",
+        category="On-Site Evidence",
+        title="Resolve citation evidence gaps before changing source strategy",
+        why_it_matters=(
+            "Citation diagnosis is inconclusive because citation evidence was unavailable or "
+            "incomplete in this run."
+        ),
+        evidence=evidence,
+        impacted_components=["citation_rate", "official_citation_share"],
+        implementation_hint=(
+            "Re-run the audit after prompt capture succeeds so you can confirm whether answers cite "
+            "the official site, third-party sources, or neither."
+        ),
+    )

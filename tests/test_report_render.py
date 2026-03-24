@@ -31,7 +31,12 @@ def test_report_generator_renders_from_canonical_audit_run():
             city="Echo Park, Los Angeles",
             website_url="https://lavetacoffee.com",
         ),
-        score=ScoreBreakdown(final=78, readiness=65, visibility=84, formula="0.55 × Visibility + 0.45 × Readiness"),
+        score=ScoreBreakdown(
+            final=75,
+            readiness=65,
+            visibility=84,
+            formula="score_v2 final = round((0.45 * readiness) + (0.55 * visibility) - penalties)",
+        ),
         readiness=ReadinessResult(
             score=65,
             dimensions={
@@ -48,7 +53,12 @@ def test_report_generator_renders_from_canonical_audit_run():
             overall_mention_rate=50.0,
             per_llm={},
             per_cluster={},
-            top_competitors={"Woodcat Coffee": 2},
+            top_competitors={
+                "Woodcat Coffee": 2,
+                "Woodcat Coffee LLC": 1,
+                "Warning: Results may vary": 3,
+                "Source: Yelp": 1,
+            },
             attributes_cited=["great coffee"],
             prompt_results=[],
         ),
@@ -71,7 +81,7 @@ def test_report_generator_renders_from_canonical_audit_run():
         html_path = ReportGenerator(audit_run, Path(tmpdir)).save_html()
         html = html_path.read_text()
 
-    assert "78/100" in html
+    assert "75/100" in html
     assert "Executive Summary" in html
     assert "Wins and Losses by Prompt Cluster" in html
     assert "Official Site Citation Share" in html
@@ -82,4 +92,7 @@ def test_report_generator_renders_from_canonical_audit_run():
     assert "Laveta" in html
     assert "Why it matters" in html
     assert "Implementation hint" in html
+    assert "Woodcat Coffee" in html
+    assert "Warning: Results may vary" not in html
+    assert "Source: Yelp" not in html
     assert "scores.overall_score" not in html

@@ -91,6 +91,7 @@ def test_audit_endpoint_returns_ui_ready_payload(monkeypatch):
     assert payload["audit"]["score"]["formula"].startswith("score_v2")
     assert payload["summary"]["headline"]
     assert payload["summary"]["overview"]
+    assert payload["score_explanation"]["final_score"] == payload["audit"]["score"]["final"]
     assert "score_cards" in payload
     assert "prompt_cluster_performance" in payload
     assert "top_competitors" in payload

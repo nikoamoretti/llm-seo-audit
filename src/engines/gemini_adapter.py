@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import time
 
-from google import genai
+try:
+    from google import genai
+except ImportError:  # pragma: no cover - exercised via adapter construction.
+    genai = None
 
 from src.engines.base import EngineResponse, PROMPT_SUFFIX
 
@@ -12,7 +15,12 @@ class GeminiAdapter:
 
     def __init__(self, api_key: str | None = None, client=None, model: str = "gemini-3.1-flash-lite-preview"):
         self.model = model
-        self.client = client or genai.Client(api_key=api_key)
+        if client is not None:
+            self.client = client
+            return
+        if genai is None:
+            raise ImportError("google.genai is required to use the Gemini adapter without an injected client.")
+        self.client = genai.Client(api_key=api_key)
 
     def query(self, prompt: str) -> EngineResponse:
         started = time.perf_counter()

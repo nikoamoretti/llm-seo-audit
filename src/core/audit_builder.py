@@ -79,7 +79,7 @@ def prompt_results_from_llm_results(llm_results: dict[str, list[dict[str, Any]]]
                     response=response.get("response") or engine_response.get("raw_text"),
                     raw_text=engine_response.get("raw_text") or response.get("response"),
                     latency_ms=engine_response.get("latency_ms"),
-                    metadata=engine_response.get("metadata", {}),
+                    metadata=_prompt_metadata(engine_response.get("metadata", {}), analysis),
                     mentioned=analysis.get("mentioned", False),
                     recommended=analysis.get("recommended", False),
                     cited=analysis.get("cited", False),
@@ -144,6 +144,15 @@ def _collect_queries(prompt_results: list[PromptResult]) -> list[str]:
         if prompt.query and prompt.query not in queries:
             queries.append(prompt.query)
     return queries
+
+
+def _prompt_metadata(engine_metadata: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
+    metadata = dict(engine_metadata)
+    for key in ("citation_evidence_state", "citation_parser_status", "citation_status", "competitor_candidates"):
+        value = analysis.get(key)
+        if value:
+            metadata[key] = value
+    return metadata
 
 
 def _coerce_timestamp(timestamp: str | datetime | None) -> datetime:

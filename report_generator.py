@@ -8,6 +8,7 @@ from jinja2 import Template
 
 from src.core.models import AuditRun
 from src.presentation import build_audit_ui_response
+from src.scoring.final import format_score_value
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -65,6 +66,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .pill-strong { color: var(--green); }
         .pill-mixed { color: var(--yellow); }
         .pill-weak { color: var(--red); }
+        .pill-unknown { color: var(--yellow); }
         footer { text-align: center; color: var(--muted); font-size: 0.8rem; margin-top: 3rem; padding-top: 1.5rem; border-top: 1px solid var(--border); }
     </style>
 </head>
@@ -77,8 +79,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     </p>
 
     <div class="card score-hero">
-        <div class="score-number {{ score_class }}">{{ audit_run.score.final }}/100</div>
-        <div class="score-label">Overall LLM Visibility Score</div>
+        <div class="score-number {{ score_class }}">{{ presentation.score_explanation.final_score }}/100</div>
+        <div class="score-label">Overall GEO Score</div>
     </div>
 
     <h2>Executive Summary</h2>
@@ -122,26 +124,71 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <div class="grid">
         {% for card in presentation.score_cards %}
         <div class="card metric">
-            <div class="metric-value">{{ card.score }}</div>
+            <div class="metric-value">{{ format_score(card.score) }}</div>
             <div class="metric-label">{{ card.label }}</div>
             <div class="score-note">{{ card.detail }}</div>
         </div>
         {% endfor %}
     </div>
 
-    {% if readiness_dimensions or visibility_dimensions %}
     <h2>Score Explanation</h2>
+    <div class="card">
+        <div class="eyebrow">Final Score Calculation</div>
+        <p class="score-note">{{ presentation.score_explanation.formula }}</p>
+        <div class="grid" style="margin-top: 1rem;">
+            <div class="card metric">
+                <div class="metric-value">{{ format_score(presentation.score_explanation.readiness_score) }}</div>
+                <div class="metric-label">Readiness Score</div>
+            </div>
+            <div class="card metric">
+                <div class="metric-value">{{ format_score(presentation.score_explanation.visibility_score) }}</div>
+                <div class="metric-label">Visibility Score</div>
+            </div>
+            <div class="card metric">
+                <div class="metric-value">{{ format_score(presentation.score_explanation.weighted_base_score) }}</div>
+                <div class="metric-label">Weighted Base Score</div>
+            </div>
+            <div class="card metric">
+                <div class="metric-value">{{ format_score(presentation.score_explanation.penalties_total) }}</div>
+                <div class="metric-label">Penalty Points</div>
+            </div>
+            <div class="card metric">
+                <div class="metric-value">{{ format_score(presentation.score_explanation.final_score) }}</div>
+                <div class="metric-label">Final Score</div>
+            </div>
+        </div>
+        <p class="score-note">{{ presentation.score_explanation.rounding_note }}</p>
+        {% if presentation.score_explanation.penalties_applied %}
+        <table style="margin-top: 1rem;">
+            <tr><th>Penalty</th><th>Points</th><th>Reason</th></tr>
+            {% for penalty in presentation.score_explanation.penalties_applied %}
+            <tr>
+                <td>{{ penalty.label }}</td>
+                <td>{{ format_score(penalty.points) }}</td>
+                <td>{{ penalty.reason }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% else %}
+        <p class="score-note">No penalties were applied in this run.</p>
+        {% endif %}
+    </div>
+
+    {% if readiness_dimensions or visibility_dimensions %}
+    <h2>Component Detail</h2>
     <div class="grid">
         {% if readiness_dimensions %}
         <div class="card">
             <table>
-                <tr><th>Readiness Component</th><th>Score</th><th>Weight</th><th>Weighted</th></tr>
+                <tr><th>Readiness Component</th><th>Score</th><th>Status</th><th>Weight</th><th>Weighted</th><th>Notes</th></tr>
                 {% for dimension in readiness_dimensions %}
                 <tr>
                     <td>{{ dimension.label }}</td>
-                    <td>{{ dimension.score }}</td>
-                    <td>{{ dimension.weight }}</td>
-                    <td>{{ dimension.weighted_score }}</td>
+                    <td>{{ format_score(dimension.score) }}</td>
+                    <td class="{{ readiness_state_class(dimension.state) }}">{{ dimension.state_label or 'UNVERIFIED' }}</td>
+                    <td>{{ format_score(dimension.weight) }}</td>
+                    <td>{{ format_score(dimension.weighted_score) }}</td>
+                    <td>{{ dimension.state_note }}</td>
                 </tr>
                 {% endfor %}
             </table>
@@ -154,14 +201,43 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 {% for dimension in visibility_dimensions %}
                 <tr>
                     <td>{{ dimension.label }}</td>
-                    <td>{{ dimension.score }}</td>
-                    <td>{{ dimension.weight }}</td>
-                    <td>{{ dimension.weighted_score }}</td>
+                    <td>{{ format_score(dimension.score) }}</td>
+                    <td>{{ format_score(dimension.weight) }}</td>
+                    <td>{{ format_score(dimension.weighted_score) }}</td>
                 </tr>
                 {% endfor %}
             </table>
         </div>
         {% endif %}
+    </div>
+    {% endif %}
+
+    {% if readiness_dimensions %}
+    <h2>Readiness Verification Detail</h2>
+    <div class="split">
+        {% for dimension in readiness_dimensions %}
+        <div class="list-card">
+            <h3>{{ dimension.label }} <span class="{{ readiness_state_class(dimension.state) }}">{{ dimension.state_label or 'UNVERIFIED' }}</span></h3>
+            <div class="score-note">{{ dimension.description }}</div>
+            {% if dimension.state_note %}
+            <div class="score-note">{{ dimension.state_note }}</div>
+            {% endif %}
+            {% if dimension.check_states %}
+            <table style="margin-top: 0.8rem;">
+                <tr><th>Check</th><th>Status</th><th>Notes</th></tr>
+                {% for name, check in dimension.check_states.items() %}
+                <tr>
+                    <td>{{ name }}</td>
+                    <td class="{{ readiness_state_class(check.state) }}">{{ check.short_label }}</td>
+                    <td>{{ check.detail }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+            <p class="empty-state">No readiness checks were captured for this area.</p>
+            {% endif %}
+        </div>
+        {% endfor %}
     </div>
     {% endif %}
 
@@ -205,6 +281,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="metric-value">{{ presentation.citation_source_breakdown.official_site_share }}%</div>
             <div class="metric-label">Official Site Share</div>
             <div class="score-note">{{ presentation.citation_source_breakdown.official_citation_count }} official cited prompts, {{ presentation.citation_source_breakdown.third_party_citation_count }} third-party cited prompts.</div>
+            {% if presentation.citation_source_breakdown.note %}
+            <div class="score-note">{{ presentation.citation_source_breakdown.note }}</div>
+            {% endif %}
         </div>
         <div class="list-card">
             <h3>Readiness Gaps</h3>
@@ -212,10 +291,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <div class="stack">
                 {% for gap in presentation.readiness_gaps[:5] %}
                 <div class="stack-item">
-                    <strong>{{ gap.label }}</strong> <span class="pill-weak">{{ gap.score }}</span>
+                    <strong>{{ gap.label }}</strong> <span class="{{ readiness_state_class(gap.state) }}">{{ gap.state_label }}</span>
+                    <div class="score-note">Score {{ gap.score }}</div>
                     <div class="score-note">{{ gap.summary }}</div>
-                    {% if gap.missing_checks %}
-                    <small>{{ gap.missing_checks | join(', ') }}</small>
+                    {% if gap.state_note %}
+                    <div class="score-note">{{ gap.state_note }}</div>
+                    {% endif %}
+                    {% if gap.verified_missing_checks %}
+                    <small>Verified missing: {{ gap.verified_missing_checks | join(', ') }}</small><br>
+                    {% endif %}
+                    {% if gap.partial_checks %}
+                    <small>Partial: {{ gap.partial_checks | join(', ') }}</small><br>
+                    {% endif %}
+                    {% if gap.unknown_checks %}
+                    <small>Unverified: {{ gap.unknown_checks | join(', ') }}</small><br>
+                    {% endif %}
+                    {% if gap.unavailable_checks %}
+                    <small>Unavailable: {{ gap.unavailable_checks | join(', ') }}</small>
                     {% endif %}
                 </div>
                 {% endfor %}
@@ -341,8 +433,8 @@ class ReportGenerator:
 
     def save_html(self) -> Path:
         path = self.output_dir / "audit_report.html"
-        score = self.audit_run.score.final
         presentation = build_audit_ui_response(self.audit_run)
+        score = presentation.score_explanation.final_score
 
         if score >= 70:
             score_class = "score-green"
@@ -351,7 +443,10 @@ class ReportGenerator:
         else:
             score_class = "score-red"
 
-        competitors_list = list(self.audit_run.visibility.top_competitors.items())[:10]
+        competitors_list = [
+            (entry.name, entry.mentions)
+            for entry in presentation.top_competitors
+        ]
         readiness_dimensions = list(self.audit_run.readiness.dimensions.values())
         visibility_dimensions = list(self.audit_run.visibility.dimensions.values())
         competitor_gap_dimension = self.audit_run.visibility.dimensions.get("competitor_gap")
@@ -364,11 +459,11 @@ class ReportGenerator:
         directory_statuses = [
             {
                 "label": "Google Business Profile",
-                "status": _status_label(self.audit_run.web_presence.get("google_business_found")),
+                "status": _source_status_label(self.audit_run.web_presence, "google_business_found"),
             },
             {
                 "label": "Yelp",
-                "status": _status_label(self.audit_run.web_presence.get("yelp_found")),
+                "status": _source_status_label(self.audit_run.web_presence, "yelp_found"),
             },
         ]
         cluster_wins = [
@@ -393,6 +488,8 @@ class ReportGenerator:
             competitor_gap_score=competitor_gap_score,
             competitor_gap_evidence=competitor_gap_evidence,
             directory_statuses=directory_statuses,
+            format_score=format_score_value,
+            readiness_state_class=_readiness_state_class,
         )
 
         with open(path, "w") as file_obj:
@@ -400,7 +497,18 @@ class ReportGenerator:
         return path
 
 
-def _status_label(status: bool | None) -> str:
-    if status is None:
+def _source_status_label(payload: dict[str, object], key: str) -> str:
+    if key not in payload:
         return "NOT CHECKED"
-    return "PASS" if status else "FAIL"
+    status = payload.get(key)
+    if status is None:
+        return "SOURCE UNAVAILABLE"
+    return "VERIFIED" if status else "VERIFIED MISSING"
+
+
+def _readiness_state_class(state: str) -> str:
+    if state == "pass":
+        return "pill-strong"
+    if state == "fail":
+        return "pill-weak"
+    return "pill-unknown"

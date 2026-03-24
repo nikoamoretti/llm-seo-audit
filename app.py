@@ -12,7 +12,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -363,13 +363,43 @@ def _parse_place(place: dict, query: str) -> dict:
     }
 
 
+def _strip_json_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    parts = stripped.split("```")
+    fenced = parts[1] if len(parts) > 1 else stripped
+    if fenced.startswith("json"):
+        fenced = fenced[4:]
+    return fenced.strip()
+
+
+def _normalized_lookup_value(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _normalize_lookup_result(payload: dict[str, Any], *, allow_contact_fields: bool) -> dict[str, Any]:
+    normalized = {
+        "business_name": _normalized_lookup_value(payload.get("business_name")),
+        "industry": _normalized_lookup_value(payload.get("industry")),
+        "city": _normalized_lookup_value(payload.get("city")),
+        "website_url": _normalized_lookup_value(payload.get("website_url")) if allow_contact_fields else "",
+        "phone": _normalized_lookup_value(payload.get("phone")) if allow_contact_fields else "",
+        "address": _normalized_lookup_value(payload.get("address")) if allow_contact_fields else "",
+    }
+    normalized["found"] = bool(normalized["business_name"] and (normalized["city"] or normalized["industry"]))
+    return normalized
+
+
 @app.post("/api/lookup")
 async def lookup_business(req: LookupRequest):
     """Look up a business using Google Places API, returns multiple results."""
     api_keys = detect_api_keys()
 
     # ── Try Google Places API first — return up to 5 results ──
-    places_key = os.environ.get("GOOGLE_PLACES_API_KEY") or api_keys.get("gemini")
+    places_key = os.environ.get("GOOGLE_PLACES_API_KEY")
     if places_key:
         try:
             resp = requests.post(
@@ -390,18 +420,22 @@ async def lookup_business(req: LookupRequest):
                 data = resp.json()
                 places = data.get("places", [])
                 if places:
-                    results = [_parse_place(p, req.query) for p in places]
+                    results = [
+                        _normalize_lookup_result(_parse_place(p, req.query), allow_contact_fields=True)
+                        for p in places
+                    ]
                     return {"results": results, "found": True}
         except Exception:
             pass
 
     # ── Fallback: LLM lookup (single result) ──
     prompt = (
-        f"What is \"{req.query}\"? Give me the business details.\n\n"
+        f"Identify the business \"{req.query}\".\n\n"
         "Reply with ONLY a JSON object, no markdown:\n"
         '{"business_name": "full name", "industry": "type like coffee shop", '
-        '"city": "Neighborhood, City, State", "website_url": "https://...", "phone": "xxx-xxx-xxxx"}\n\n'
-        "Do NOT return empty strings — always give your best guess."
+        '"city": "Neighborhood, City, State or null", "website_url": null, "phone": null, "address": null}\n\n'
+        "Use null for any field you cannot verify directly from the query. "
+        "Do not guess or invent website URLs, phone numbers, or street addresses."
     )
     for provider in ["gemini", "openai", "anthropic"]:
         if provider not in api_keys:
@@ -428,15 +462,10 @@ async def lookup_business(req: LookupRequest):
                     model="claude-sonnet-4-6", max_tokens=256,
                     messages=[{"role": "user", "content": prompt}])
                 text = message.content[0].text.strip()
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-                text = text.strip()
-            data = json.loads(text)
-            data["found"] = bool(data.get("city") or data.get("industry"))
-            if data["found"]:
-                return {"results": [data], "found": True}
+            data = json.loads(_strip_json_fence(text))
+            normalized = _normalize_lookup_result(data, allow_contact_fields=False)
+            if normalized["found"]:
+                return {"results": [normalized], "found": True}
         except Exception:
             continue
 

@@ -46,3 +46,9 @@
 - `/api/audit` now returns a presentation wrapper with the canonical audit plus summary, score cards, prompt-cluster performance, citation breakdown, readiness gaps, top recommendations, and checklist data for the UI.
 - `report_generator.py` and `ui.html` now emphasize executive summary, cluster wins/losses, citation mix, competitor gap, top fixes, and implementation checklist sections instead of raw debug-style tables.
 - The browser UI render path is now split into section helpers, and CI now installs Chromium, runs the benchmark suite on push, and schedules a weekly canary snapshot job.
+
+### Fixed
+- Score explanation and rendered GEO score copy now reconcile exactly, including explicit penalties and render-time integrity failures when display math drifts from the computed score.
+- Citation recommendations and summaries now stay aligned with captured evidence states, so `no_citations` and `unavailable` runs no longer claim unsupported citation behavior.
+- Competitor presentation now filters junk phrases out of report, UI, legacy recommendations, and terminal output instead of surfacing editorial fragments and source labels as competitors.
+- Unknown and unavailable readiness signals now remain visible as incomplete evidence instead of rendering as plain failures, including listing-source states in report and terminal output.

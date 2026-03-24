@@ -29,6 +29,7 @@ from analyzer import ResponseAnalyzer
 from demo_mode import DemoAuditor
 from llm_querier import LLMQuerier
 from report_generator import ReportGenerator
+from src.analysis.competitors import select_report_competitors
 from src.core.audit_builder import build_audit_run
 from src.core.models import AuditRun
 from web_presence import WebPresenceChecker
@@ -251,6 +252,16 @@ def print_terminal_report(audit_run: AuditRun):
             return "[yellow]NOT CHECKED[/]"
         return "[green]PASS[/]" if status else "[red]FAIL[/]"
 
+    def format_source_status(payload, key):
+        if key not in payload:
+            return "[yellow]NOT CHECKED[/]"
+        status = payload.get(key)
+        if status is None:
+            return "[yellow]SOURCE UNAVAILABLE[/]"
+        return "[green]VERIFIED[/]" if status else "[red]VERIFIED MISSING[/]"
+
+    business_variants = [audit_run.entity.business_name, audit_run.input.business_name]
+
     # --- Overall Score ---
     score = audit_run.score.final
     if score >= 70:
@@ -265,7 +276,7 @@ def print_terminal_report(audit_run: AuditRun):
 
     console.print(Panel(
         f"[bold {color}]{score}/100[/] - {grade}",
-        title="[bold]Overall LLM Visibility Score[/]",
+        title="[bold]Overall GEO Score[/]",
         border_style=color,
         padding=(1, 4),
     ))
@@ -295,7 +306,7 @@ def print_terminal_report(audit_run: AuditRun):
         wp = audit_run.web_presence
         web_table = Table(title="Web Presence Checks", box=box.ROUNDED, show_lines=True)
         web_table.add_column("Check", width=30)
-        web_table.add_column("Status", justify="center", width=10)
+        web_table.add_column("Status", justify="center", width=18)
 
         checks = [
             ("Schema/Structured Data", wp.get("has_schema_markup")),
@@ -304,24 +315,29 @@ def print_terminal_report(audit_run: AuditRun):
             ("Title Tag", wp.get("has_title_tag")),
             ("SSL Certificate", wp.get("ssl_valid")),
             ("Mobile-Friendly Meta", wp.get("mobile_friendly_meta")),
-            ("Google Business Profile", wp.get("google_business_found")),
-            ("Yelp Listing", wp.get("yelp_found")),
+            ("Google Business Profile", format_source_status(wp, "google_business_found")),
+            ("Yelp Listing", format_source_status(wp, "yelp_found")),
             ("Fast Load Time", wp.get("fast_load")),
         ]
         for name, status in checks:
-            web_table.add_row(name, format_check_status(status))
+            rendered_status = status if isinstance(status, str) else format_check_status(status)
+            web_table.add_row(name, rendered_status)
 
         ws = audit_run.score.readiness
         web_table.add_row("[bold]Web Presence Score[/]", f"[bold]{ws}/100[/]")
         console.print(web_table)
 
     # --- Competitors ---
-    if audit_run.visibility.top_competitors:
+    visible_competitors = select_report_competitors(
+        audit_run.visibility.top_competitors,
+        business_variants=business_variants,
+    )
+    if visible_competitors:
         comp_table = Table(title="Top Competitors Mentioned by LLMs", box=box.ROUNDED)
         comp_table.add_column("Competitor", style="bold")
         comp_table.add_column("Times Mentioned", justify="center")
 
-        for comp, count in list(audit_run.visibility.top_competitors.items())[:10]:
+        for comp, count in visible_competitors[:10]:
             comp_table.add_row(comp, str(count))
         console.print(comp_table)
 

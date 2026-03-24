@@ -1226,6 +1226,48 @@ function gradeBg(score) {
     return 'var(--red-bg)';
 }
 
+function formatScoreValue(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return '0';
+    if (Number.isInteger(num)) return String(num);
+    return num.toFixed(3).replace(/\.?0+$/, '');
+}
+
+function roundHalfEven(value) {
+    const sign = value < 0 ? -1 : 1;
+    const absolute = Math.abs(value);
+    const floor = Math.floor(absolute);
+    const fraction = absolute - floor;
+    if (fraction < 0.5) return sign * floor;
+    if (fraction > 0.5) return sign * (floor + 1);
+    return sign * (floor % 2 === 0 ? floor : floor + 1);
+}
+
+function assertScoreExplanationIntegrity(score, scoreExplanation) {
+    if (!scoreExplanation) {
+        throw new Error('Missing score explanation payload.');
+    }
+
+    const weightedBase = Number(scoreExplanation.weighted_base_score || 0);
+    const penalties = Number(scoreExplanation.penalties_total || 0);
+    const finalScore = Number(scoreExplanation.final_score || 0);
+    const visibilityScore = Number(scoreExplanation.visibility_score || 0);
+    const readinessScore = Number(scoreExplanation.readiness_score || 0);
+
+    if (readinessScore !== Number(score.readiness || 0)) {
+        throw new Error('Readiness score does not match the rendered explanation.');
+    }
+    if (Math.abs(visibilityScore - Number(score.visibility || 0)) > 0.0001) {
+        throw new Error('Visibility score does not match the rendered explanation.');
+    }
+    if (finalScore !== Number(score.final || 0)) {
+        throw new Error('Final score does not match the rendered explanation.');
+    }
+    if (Math.max(0, roundHalfEven(weightedBase - penalties)) !== finalScore) {
+        throw new Error('Weighted base minus penalties does not reconcile to the final score.');
+    }
+}
+
 function ring(size, value, color, strokeW) {
     const r = (size / 2) - strokeW - 2;
     const c = 2 * Math.PI * r;
@@ -1339,11 +1381,20 @@ function renderPrintBar() {
     </div>`;
 }
 
-function renderScoreHero(audit, geo, geoColor, readinessScore, readinessColor, visibilityScore, visibilityColor) {
+function renderIntegrityFailure(message) {
+    return `${sectionDivider('Score Integrity Error')}
+    <div class="cluster-panel">
+        <div class="cluster-title">The score explanation does not match the computed score.</div>
+        <div class="summary-copy">${message}</div>
+        <div class="note-line">Rendering stopped so the report does not show misleading score math.</div>
+    </div>`;
+}
+
+function renderScoreHero(audit, geo, geoColor, readinessScore, readinessColor, visibilityScore, visibilityColor, scoreExplanation) {
     return `<div class="score-hero">
         <div class="main-ring">
             ${ring(200, geo, geoColor, 8)}
-            <div class="ring-value" style="color:${geoColor}">${geo}</div>
+            <div class="ring-value" style="color:${geoColor}">${formatScoreValue(geo)}</div>
             <div class="ring-label">GEO Score</div>
         </div>
         <div class="grade-pill" style="color:${geoColor};background:${gradeBg(geo)}">${grade(geo)}</div>
@@ -1353,19 +1404,19 @@ function renderScoreHero(audit, geo, geoColor, readinessScore, readinessColor, v
             <div class="sub-ring-wrap">
                 <div class="sub-ring">
                     ${ring(116, readinessScore, readinessColor, 5)}
-                    <div class="sr-value" style="color:${readinessColor}">${readinessScore}</div>
+                    <div class="sr-value" style="color:${readinessColor}">${formatScoreValue(readinessScore)}</div>
                     <div class="sr-label">Readiness</div>
                 </div>
             </div>
             <div class="formula-block">
-                <span class="coeff">0.55</span> &times; V<br>
-                <span style="font-size:0.85em">+</span><br>
-                <span class="coeff">0.45</span> &times; R
+                <div><span class="coeff">${formatScoreValue(scoreExplanation.weighted_base_score)}</span> base</div>
+                <div>- <span class="coeff">${formatScoreValue(scoreExplanation.penalties_total)}</span> penalties</div>
+                <div>= <span class="coeff">${formatScoreValue(scoreExplanation.final_score)}</span> final</div>
             </div>
             <div class="sub-ring-wrap">
                 <div class="sub-ring">
                     ${ring(116, visibilityScore, visibilityColor, 5)}
-                    <div class="sr-value" style="color:${visibilityColor}">${visibilityScore}</div>
+                    <div class="sr-value" style="color:${visibilityColor}">${formatScoreValue(visibilityScore)}</div>
                     <div class="sr-label">Visibility</div>
                 </div>
             </div>
@@ -1401,12 +1452,58 @@ function renderScoreCards(scoreCards) {
         h += `<div class="llm-card">
             <div class="llm-header">
                 <div class="llm-name">${card.label}</div>
-                <div class="llm-big-score" style="color:${vsc}">${card.score}</div>
+                <div class="llm-big-score" style="color:${vsc}">${formatScoreValue(card.score)}</div>
             </div>
             <div class="rec-detail">${card.detail}</div>
         </div>`;
     }
     h += `</div>`;
+    return h;
+}
+
+function renderScoreExplanation(scoreExplanation) {
+    const penalties = scoreExplanation.penalties_applied || [];
+    let h = sectionDivider('Score Explanation');
+    h += `<div class="llm-grid">
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Readiness Score</div>
+                <div class="llm-big-score" style="color:${sc(scoreExplanation.readiness_score || 0)}">${formatScoreValue(scoreExplanation.readiness_score)}</div>
+            </div>
+        </div>
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Visibility Score</div>
+                <div class="llm-big-score" style="color:${sc(scoreExplanation.visibility_score || 0)}">${formatScoreValue(scoreExplanation.visibility_score)}</div>
+            </div>
+        </div>
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Weighted Base Score</div>
+                <div class="llm-big-score">${formatScoreValue(scoreExplanation.weighted_base_score)}</div>
+            </div>
+        </div>
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Penalty Points</div>
+                <div class="llm-big-score">${formatScoreValue(scoreExplanation.penalties_total)}</div>
+            </div>
+        </div>
+        <div class="llm-card">
+            <div class="llm-header">
+                <div class="llm-name">Final Score</div>
+                <div class="llm-big-score" style="color:${sc(scoreExplanation.final_score || 0)}">${formatScoreValue(scoreExplanation.final_score)}</div>
+            </div>
+        </div>
+    </div>`;
+    h += `<div class="cluster-panel">
+        <div class="cluster-title">How the final score is calculated</div>
+        <div class="summary-copy">${scoreExplanation.formula || 'No score formula was provided.'}</div>
+        <div class="note-line">${scoreExplanation.rounding_note || 'The final score is rounded after penalties are subtracted.'}</div>
+        ${penalties.length
+            ? penalties.map((penalty) => `<div class="note-line">${penalty.label}: -${formatScoreValue(penalty.points)}. ${penalty.reason || ''}</div>`).join('')
+            : '<div class="note-line">No penalties were applied in this run.</div>'}
+    </div>`;
     return h;
 }
 
@@ -1466,18 +1563,70 @@ function renderCitationSources(citationBreakdown) {
     </div>`;
 }
 
+function readinessStateMeta(state, fallbackLabel) {
+    if (state === 'pass') return { badgeClass: 'r-check-pass', label: fallbackLabel || 'VERIFIED' };
+    if (state === 'fail') return { badgeClass: 'r-check-fail', label: fallbackLabel || 'VERIFIED MISSING' };
+    if (state === 'mixed') return { badgeClass: 'r-check-unknown', label: fallbackLabel || 'PARTIAL' };
+    if (state === 'unavailable') return { badgeClass: 'r-check-unknown', label: fallbackLabel || 'UNAVAILABLE' };
+    return { badgeClass: 'r-check-unknown', label: fallbackLabel || 'UNVERIFIED' };
+}
+
+function renderReadinessVerification(readinessDimensions) {
+    const entries = Object.entries(readinessDimensions || {});
+    let h = sectionDivider('Readiness Verification Detail');
+    if (!entries.length) return h + renderEmptyState('No readiness checks were captured for this run.');
+    h += `<div class="llm-grid">`;
+    for (const [key, dimension] of entries) {
+        const dimensionMeta = readinessStateMeta(dimension.state, dimension.state_label);
+        const checkStates = Object.entries(dimension.check_states || {});
+        h += `<div class="r-card expanded">
+            <div class="r-card-head">
+                <div>
+                    <div class="r-card-name">${dimension.label || key}</div>
+                    <div class="note-line">${dimensionMeta.label}</div>
+                </div>
+                <div class="r-card-num" style="color:${sc(dimension.score || 0)}">${formatScoreValue(dimension.score || 0)}</div>
+            </div>
+            <div class="r-progress">
+                <div class="r-progress-fill" style="width:${dimension.score || 0}%;background:${sc(dimension.score || 0)}"></div>
+            </div>
+            <div class="r-card-desc">${dimension.description || ''}</div>
+            ${dimension.state_note ? `<div class="note-line">${dimension.state_note}</div>` : ''}
+            <div class="r-checks">
+                ${checkStates.length
+                    ? checkStates.map(([name, check]) => {
+                        const meta = readinessStateMeta(check.state, check.short_label);
+                        return `<div class="r-check">
+                            <span class="r-check-tag ${meta.badgeClass}">${meta.label}</span>
+                            <div class="r-check-text"><strong>${name}</strong>${check.detail ? `: ${check.detail}` : ''}</div>
+                        </div>`;
+                    }).join('')
+                    : `<div class="r-check"><span class="r-check-tag r-check-unknown">UNVERIFIED</span><div class="r-check-text">No readiness checks were captured for this area.</div></div>`}
+            </div>
+        </div>`;
+    }
+    h += `</div>`;
+    return h;
+}
+
 function renderReadinessGaps(readinessGaps) {
     let h = sectionDivider('Readiness Gaps');
     if (!readinessGaps.length) return h + renderEmptyState('No major readiness gaps surfaced in this run.');
     h += `<div class="rec-list">`;
     for (const gap of readinessGaps.slice(0, 6)) {
+        const meta = readinessStateMeta(gap.state, gap.state_label);
         h += `<div class="rec-card P1">
             <div class="rec-head">
                 <div class="rec-title">${gap.label}</div>
-                <span class="rec-badge P1">${gap.score}</span>
+                <span class="rec-badge P1">${meta.label}</span>
             </div>
             <div class="rec-detail">${gap.summary}</div>
-            ${gap.missing_checks && gap.missing_checks.length ? `<div class="note-line">Missing checks: ${gap.missing_checks.join(', ')}</div>` : ''}
+            <div class="note-line">Score: ${formatScoreValue(gap.score || 0)}</div>
+            ${gap.state_note ? `<div class="note-line">${gap.state_note}</div>` : ''}
+            ${gap.verified_missing_checks && gap.verified_missing_checks.length ? `<div class="note-line">Verified missing: ${gap.verified_missing_checks.join(', ')}</div>` : ''}
+            ${gap.partial_checks && gap.partial_checks.length ? `<div class="note-line">Partial: ${gap.partial_checks.join(', ')}</div>` : ''}
+            ${gap.unknown_checks && gap.unknown_checks.length ? `<div class="note-line">Unverified: ${gap.unknown_checks.join(', ')}</div>` : ''}
+            ${gap.unavailable_checks && gap.unavailable_checks.length ? `<div class="note-line">Unavailable: ${gap.unavailable_checks.join(', ')}</div>` : ''}
         </div>`;
     }
     h += `</div>`;
@@ -1555,40 +1704,50 @@ function renderResults(data) {
     const audit = data.audit;
     const score = audit.score;
     const geo = score.final;
-    const readinessScore = score.readiness;
-    const visibilityScore = Math.round(score.visibility);
+    const scoreExplanation = data.score_explanation || {};
+    const readinessScore = scoreExplanation.readiness_score ?? score.readiness;
+    const visibilityScore = scoreExplanation.visibility_score ?? score.visibility;
     const summary = data.summary || {};
     const scoreCards = data.score_cards || [];
     const clusterPerformance = data.prompt_cluster_performance || [];
     const citationBreakdown = data.citation_source_breakdown || {};
     const readinessGaps = data.readiness_gaps || [];
+    const readinessDimensions = ((audit.readiness || {}).dimensions || {});
     const topCompetitors = data.top_competitors || [];
     const topRecommendations = data.top_recommendations || [];
     const implementationChecklist = data.implementation_checklist || [];
     const competitorGap = (((audit.visibility || {}).dimensions || {}).competitor_gap || {});
+    const el = document.getElementById('results');
 
     let h = '';
-    h += renderPrintBar();
-    h += renderScoreHero(
-        audit,
-        geo,
-        sc(geo),
-        readinessScore,
-        sc(readinessScore),
-        visibilityScore,
-        sc(visibilityScore)
-    );
-    h += renderExecutiveSummary(summary);
-    h += renderScoreCards(scoreCards);
-    h += renderClusterPerformance(clusterPerformance);
-    h += renderCitationSources(citationBreakdown);
-    h += renderReadinessGaps(readinessGaps);
-    h += renderCompetitorGap(competitorGap, topCompetitors);
-    h += renderTopFixes(topRecommendations);
-    h += renderImplementationChecklist(implementationChecklist);
-    h += renderFooter(audit.mode);
+    try {
+        assertScoreExplanationIntegrity(score, scoreExplanation);
+        h += renderPrintBar();
+        h += renderScoreHero(
+            audit,
+            geo,
+            sc(geo),
+            readinessScore,
+            sc(readinessScore),
+            visibilityScore,
+            sc(visibilityScore),
+            scoreExplanation
+        );
+        h += renderExecutiveSummary(summary);
+        h += renderScoreExplanation(scoreExplanation);
+        h += renderScoreCards(scoreCards);
+        h += renderClusterPerformance(clusterPerformance);
+        h += renderCitationSources(citationBreakdown);
+        h += renderReadinessVerification(readinessDimensions);
+        h += renderReadinessGaps(readinessGaps);
+        h += renderCompetitorGap(competitorGap, topCompetitors);
+        h += renderTopFixes(topRecommendations);
+        h += renderImplementationChecklist(implementationChecklist);
+        h += renderFooter(audit.mode);
+    } catch (err) {
+        h = renderIntegrityFailure(err.message || 'Unable to reconcile score values.');
+    }
 
-    const el = document.getElementById('results');
     el.innerHTML = h;
     el.classList.add('active');
     el.scrollIntoView({ behavior: 'smooth' });

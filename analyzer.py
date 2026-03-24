@@ -5,9 +5,10 @@ Compatibility facade for structured response analysis.
 from __future__ import annotations
 
 import re
+from dataclasses import asdict
 
 from src.analysis.citations import citation_flags, extract_citations
-from src.analysis.competitors import extract_competitors
+from src.analysis.competitors import extract_competitor_candidates, filter_competitor_candidates
 from src.analysis.fact_check import score_fact_alignment
 from src.analysis.mentions import analyze_mentions
 from src.analysis.positions import PositionResult, detect_position
@@ -31,12 +32,23 @@ class ResponseAnalyzer:
             return self.empty_analysis()
 
         mention = analyze_mentions(self.business_name, response)
-        citations = extract_citations(response, self.known_facts)
-        citation_state = citation_flags(citations)
+        citation_evidence_state: str | None = None
+        try:
+            citations = extract_citations(response, self.known_facts)
+            citation_state = citation_flags(citations)
+        except Exception:
+            citations = []
+            citation_state = {
+                "cited": False,
+                "cited_official_domain": False,
+                "cited_third_party_domain": False,
+            }
+            citation_evidence_state = "unavailable"
         position = self._position_for_response(response, mention)
         sentiment = score_sentiment(response, mention.name_variants, mention.mentioned)
         fact_check = score_fact_alignment(response, self.known_facts)
-        competitors = extract_competitors(response, mention.name_variants)
+        competitor_candidates = extract_competitor_candidates(response, mention.name_variants)
+        competitors = filter_competitor_candidates(competitor_candidates)
         attributes = self._extract_attributes(response)
         visibility_score = compute_legacy_visibility_score(
             mentioned=mention.mentioned,
@@ -55,6 +67,7 @@ class ResponseAnalyzer:
             "cited": citation_state["cited"],
             "cited_official_domain": citation_state["cited_official_domain"],
             "cited_third_party_domain": citation_state["cited_third_party_domain"],
+            "citation_evidence_state": citation_evidence_state,
             "citations": [
                 {
                     "label": citation.label,
@@ -73,6 +86,7 @@ class ResponseAnalyzer:
             "fact_matches": fact_check.matches,
             "visibility_score": visibility_score,
             "competitors": competitors,
+            "competitor_candidates": [asdict(candidate) for candidate in competitor_candidates],
             "attributes": attributes,
         }
 
@@ -113,6 +127,7 @@ class ResponseAnalyzer:
             "cited": False,
             "cited_official_domain": False,
             "cited_third_party_domain": False,
+            "citation_evidence_state": "unavailable",
             "citations": [],
             "position": None,
             "total_items": 0,
@@ -122,5 +137,6 @@ class ResponseAnalyzer:
             "fact_matches": {},
             "visibility_score": 0.0,
             "competitors": [],
+            "competitor_candidates": [],
             "attributes": [],
         }

@@ -6,6 +6,9 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
+ReadinessState = Literal["pass", "fail", "mixed", "unknown", "unavailable"]
+
+
 class CanonicalModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -66,13 +69,23 @@ class PromptResult(CanonicalModel):
     citations: List[CitationRecord] = Field(default_factory=list)
 
 
+class ReadinessCheck(CanonicalModel):
+    state: ReadinessState
+    short_label: str
+    detail: str = ""
+
+
 class CheckDimension(CanonicalModel):
     score: int = 0
     label: str
     description: str
     weight: float = 0.0
     weighted_score: float = 0.0
+    state: ReadinessState = "unknown"
+    state_label: str = ""
+    state_note: str = ""
     checks: Dict[str, Optional[bool]] = Field(default_factory=dict)
+    check_states: Dict[str, ReadinessCheck] = Field(default_factory=dict)
     metrics: Dict[str, Any] = Field(default_factory=dict)
     evidence: List[str] = Field(default_factory=list)
 

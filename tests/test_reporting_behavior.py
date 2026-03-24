@@ -113,7 +113,7 @@ class ReportingBehaviorTest(unittest.TestCase):
         self.assertEqual(scores["llm_visibility_score"], canonical_scores["visibility_score"])
         self.assertEqual(scores["web_presence_score"], canonical_scores["readiness_score"])
 
-    def test_report_generator_renders_not_checked_and_omits_bbb(self):
+    def test_report_generator_renders_source_unavailable_and_omits_bbb(self):
         raw_result = {
             "mode": "live",
             "business_name": "Laveta",
@@ -121,10 +121,10 @@ class ReportingBehaviorTest(unittest.TestCase):
             "city": "Echo Park, Los Angeles",
             "timestamp": "2026-03-17T12:00:00",
             "scores": {
-                "geo_score": 82,
+                "geo_score": 68,
                 "readiness_score": 50,
                 "visibility_score": 82,
-                "formula": "0.55 × Visibility + 0.45 × Readiness",
+                "formula": "score_v2 final = round((0.45 * readiness) + (0.55 * visibility) - penalties)",
                 "readiness": {
                     "R": 50,
                     "R_local_entity": {
@@ -158,7 +158,7 @@ class ReportingBehaviorTest(unittest.TestCase):
             html_path = ReportGenerator(audit_run, Path(tmpdir)).save_html()
             html = html_path.read_text()
 
-        self.assertIn("NOT CHECKED", html)
+        self.assertIn("SOURCE UNAVAILABLE", html)
         self.assertIn("Google Business Profile", html)
         self.assertNotIn("BBB Listing", html)
 
@@ -182,12 +182,20 @@ class ReportingBehaviorTest(unittest.TestCase):
                         "total_queries": 2,
                         "times_mentioned": 1,
                         "times_cited": 0,
-                        "top_competitors": {"Woodcat Coffee": 1},
+                        "top_competitors": {
+                            "Woodcat Coffee": 1,
+                            "Warning: Results may vary": 2,
+                            "Source: Yelp": 1,
+                        },
                         "attributes_cited": ["great coffee"],
                     }
                 },
                 "overall_mention_rate": 50.0,
-                "top_competitors": {"Woodcat Coffee": 1},
+                "top_competitors": {
+                    "Woodcat Coffee": 1,
+                    "Warning: Results may vary": 2,
+                    "Source: Yelp": 1,
+                },
                 "attributes_cited": ["great coffee"],
             },
             "web_presence": {
@@ -203,11 +211,14 @@ class ReportingBehaviorTest(unittest.TestCase):
 
         output = capture.get()
         normalized_output = " ".join(output.split())
-        self.assertIn("Overall LLM Visibility Score", output)
+        self.assertIn("Overall GEO Score", output)
         self.assertIn("82/100", output)
         self.assertIn("Google Business Profile", output)
         self.assertIn("Web Presence Score", output)
+        self.assertIn("SOURCE UNAVAILABLE", normalized_output)
         self.assertIn("Study what these competitors are doing right: Woodcat Coffee", normalized_output)
+        self.assertNotIn("Warning: Results may vary", output)
+        self.assertNotIn("Source: Yelp", output)
 
 
 if __name__ == "__main__":

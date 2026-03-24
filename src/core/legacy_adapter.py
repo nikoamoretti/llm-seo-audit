@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, cast
 
+from src.analysis.competitors import select_report_competitors
 from src.core.models import (
     AuditRun,
     BusinessEntity,
@@ -12,6 +13,7 @@ from src.core.models import (
     CitationRecord,
     PromptResult,
     ProviderVisibility,
+    ReadinessCheck,
     ReadinessResult,
     Recommendation,
     ScoreBreakdown,
@@ -231,13 +233,51 @@ def _adapt_readiness(readiness_data: dict[str, Any], score: int) -> ReadinessRes
         if key == "R":
             continue
         if isinstance(value, dict):
+            checks = value.get("checks", {})
             dimensions[key] = CheckDimension(
                 score=value.get("score", 0),
                 label=value.get("label", key),
                 description=value.get("description", ""),
-                checks=value.get("checks", {}),
+                state=value.get("state", _legacy_dimension_state(checks)),
+                state_label=value.get("state_label", ""),
+                state_note=value.get("state_note", ""),
+                checks=checks,
+                check_states=_legacy_check_states(checks, value.get("check_states", {})),
             )
     return ReadinessResult(score=score, dimensions=dimensions)
+
+
+def _legacy_check_states(
+    checks: dict[str, Any],
+    check_states: dict[str, Any],
+) -> dict[str, ReadinessCheck]:
+    if isinstance(check_states, dict) and check_states:
+        return {
+            name: ReadinessCheck.model_validate(state)
+            for name, state in check_states.items()
+            if isinstance(state, dict)
+        }
+    return {
+        name: ReadinessCheck(
+            state="pass" if value is True else ("fail" if value is False else "unknown"),
+            short_label="VERIFIED" if value is True else ("VERIFIED MISSING" if value is False else "UNVERIFIED"),
+            detail="Legacy readiness check imported without explicit state metadata.",
+        )
+        for name, value in checks.items()
+    }
+
+
+def _legacy_dimension_state(checks: dict[str, Any]) -> str:
+    values = list(checks.values())
+    if not values:
+        return "unknown"
+    if any(value is True for value in values) and any(value is False for value in values):
+        return "mixed"
+    if any(value is False for value in values):
+        return "mixed" if any(value is None for value in values) else "fail"
+    if any(value is True for value in values):
+        return "mixed" if any(value is None for value in values) else "pass"
+    return "unknown"
 
 
 def _adapt_visibility_from_app(
@@ -306,7 +346,7 @@ def _prompt_results_from_app(llm_responses: dict[str, list[dict[str, Any]]]) -> 
                     response=response.get("response") or engine_response.get("raw_text"),
                     raw_text=engine_response.get("raw_text") or response.get("response"),
                     latency_ms=engine_response.get("latency_ms"),
-                    metadata=engine_response.get("metadata", {}),
+                    metadata=_prompt_metadata(engine_response.get("metadata", {}), analysis),
                     mentioned=analysis.get("mentioned", False),
                     recommended=analysis.get("recommended", False),
                     cited=analysis.get("cited", False),
@@ -337,7 +377,7 @@ def _prompt_results_from_audit(llm_results: dict[str, list[dict[str, Any]]]) -> 
                     response=response.get("response") or engine_response.get("raw_text"),
                     raw_text=engine_response.get("raw_text") or response.get("response"),
                     latency_ms=engine_response.get("latency_ms"),
-                    metadata=engine_response.get("metadata", {}),
+                    metadata=_prompt_metadata(engine_response.get("metadata", {}), analysis),
                     mentioned=analysis.get("mentioned", False),
                     recommended=analysis.get("recommended", False),
                     cited=analysis.get("cited", False),
@@ -371,6 +411,15 @@ def _engine_response_payload(response: dict[str, Any], provider: str) -> dict[st
         "raw_text": response.get("response"),
         "metadata": {},
     }
+
+
+def _prompt_metadata(engine_metadata: dict[str, Any], analysis: dict[str, Any]) -> dict[str, Any]:
+    metadata = dict(engine_metadata)
+    for key in ("citation_evidence_state", "citation_parser_status", "citation_status", "competitor_candidates"):
+        value = analysis.get(key)
+        if value:
+            metadata[key] = value
+    return metadata
 
 
 def _citation_records(citations: list[dict[str, Any]]) -> list[CitationRecord]:
@@ -460,8 +509,12 @@ def _build_recommendations(audit_run: AuditRun) -> list[Recommendation]:
     if web_presence and web_presence.get("has_faq_schema") is False:
         add("faq_schema_missing")
 
-    if audit_run.visibility.top_competitors:
-        top = list(audit_run.visibility.top_competitors.keys())[:3]
+    visible_competitors = select_report_competitors(
+        audit_run.visibility.top_competitors,
+        business_variants=_business_variants(audit_run),
+    )
+    if visible_competitors:
+        top = [name for name, _ in visible_competitors[:3]]
         recommendations.append(
             Recommendation(
                 priority="P2",
@@ -490,3 +543,18 @@ def _build_recommendations(audit_run: AuditRun) -> list[Recommendation]:
         )
 
     return recommendations
+
+
+def _business_variants(audit_run: AuditRun) -> list[str]:
+    variants = [
+        audit_run.entity.business_name,
+        audit_run.input.business_name,
+    ]
+    seen: set[str] = set()
+    unique: list[str] = []
+    for variant in variants:
+        normalized = variant.strip().lower()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            unique.append(variant)
+    return unique

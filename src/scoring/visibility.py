@@ -1,10 +1,30 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from typing import Iterable
+from dataclasses import dataclass
+from typing import Iterable, Literal
 
 from src.core.models import CheckDimension, ClusterVisibility, PromptResult, ProviderVisibility, VisibilityResult
 from src.scoring.config import load_score_config
+
+
+CitationEvidenceState = Literal[
+    "no_citations",
+    "official_only",
+    "third_party_only",
+    "mixed",
+    "unavailable",
+]
+
+
+@dataclass(frozen=True)
+class CitationEvidenceSummary:
+    state: CitationEvidenceState
+    official_citation_count: int
+    third_party_citation_count: int
+    cited_prompt_count: int
+    uncited_prompt_count: int
+    unavailable_prompt_count: int
 
 
 def score_visibility(prompt_results: list[PromptResult]) -> VisibilityResult:
@@ -30,6 +50,44 @@ def score_visibility(prompt_results: list[PromptResult]) -> VisibilityResult:
         top_competitors=top_competitors,
         attributes_cited=attributes,
         prompt_results=prompt_results,
+    )
+
+
+def summarize_citation_evidence(prompt_results: list[PromptResult]) -> CitationEvidenceSummary:
+    if not prompt_results:
+        return CitationEvidenceSummary(
+            state="unavailable",
+            official_citation_count=0,
+            third_party_citation_count=0,
+            cited_prompt_count=0,
+            uncited_prompt_count=0,
+            unavailable_prompt_count=0,
+        )
+
+    official_citation_count = sum(1 for prompt in prompt_results if prompt.cited_official_domain)
+    third_party_citation_count = sum(1 for prompt in prompt_results if prompt.cited_third_party_domain)
+    cited_prompt_count = sum(1 for prompt in prompt_results if prompt.cited)
+    uncited_prompt_count = sum(1 for prompt in prompt_results if not prompt.cited)
+    unavailable_prompt_count = sum(1 for prompt in prompt_results if _citation_evidence_is_unavailable(prompt))
+
+    if unavailable_prompt_count:
+        state: CitationEvidenceState = "unavailable"
+    elif official_citation_count == 0 and third_party_citation_count == 0:
+        state = "no_citations"
+    elif official_citation_count > 0 and third_party_citation_count == 0:
+        state = "official_only"
+    elif official_citation_count == 0 and third_party_citation_count > 0:
+        state = "third_party_only"
+    else:
+        state = "mixed"
+
+    return CitationEvidenceSummary(
+        state=state,
+        official_citation_count=official_citation_count,
+        third_party_citation_count=third_party_citation_count,
+        cited_prompt_count=cited_prompt_count,
+        uncited_prompt_count=uncited_prompt_count,
+        unavailable_prompt_count=unavailable_prompt_count,
     )
 
 
@@ -240,3 +298,14 @@ def _percentage(numerator: int, denominator: int) -> float:
     if denominator <= 0:
         return 0.0
     return (numerator / denominator) * 100.0
+
+
+def _citation_evidence_is_unavailable(prompt: PromptResult) -> bool:
+    statuses = [
+        str(prompt.metadata.get("citation_parser_status", "")),
+        str(prompt.metadata.get("citation_evidence_state", "")),
+        str(prompt.metadata.get("citation_status", "")),
+    ]
+    if any(status.lower() in {"unknown", "unavailable", "failed", "partial_failure"} for status in statuses):
+        return True
+    return prompt.cited and not prompt.cited_official_domain and not prompt.cited_third_party_domain

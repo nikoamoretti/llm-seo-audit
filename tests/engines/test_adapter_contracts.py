@@ -1,6 +1,9 @@
 from types import SimpleNamespace
 
+import pytest
+
 from src.engines.anthropic_adapter import AnthropicAdapter
+from src.engines import gemini_adapter as gemini_module
 from src.engines.gemini_adapter import GeminiAdapter
 from src.engines.openai_adapter import OpenAIAdapter
 from src.engines.perplexity_adapter import PerplexityAdapter
@@ -61,6 +64,13 @@ def test_gemini_adapter_returns_normalized_response():
     assert result.provider == "gemini"
     assert result.raw_text == "Gemini result"
     assert result.metadata["model"] == "gemini-test"
+
+
+def test_gemini_adapter_requires_sdk_when_no_client_is_injected(monkeypatch):
+    monkeypatch.setattr(gemini_module, "genai", None)
+
+    with pytest.raises(ImportError, match="google.genai"):
+        GeminiAdapter(api_key="test-key")
 
 
 def test_perplexity_adapter_returns_normalized_response():
