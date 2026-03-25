@@ -348,24 +348,33 @@ async def run_audit(req: AuditRequest):
         )
         return build_audit_ui_response(audit_run)
 
-    # Auto-discover website if not provided — use Claude directly (most reliable)
+    # Auto-discover website if not provided
     website_url = req.website_url
-    if not website_url and "anthropic" in api_keys:
-        try:
-            import anthropic as _anthropic
-            client = _anthropic.Anthropic(api_key=api_keys["anthropic"])
-            location = f" in {req.city}" if req.city else ""
-            industry_hint = f" ({req.industry})" if req.industry else ""
-            resp = client.messages.create(
-                model="claude-sonnet-4-20250514", max_tokens=50,
-                messages=[{"role": "user", "content":
-                    f'What is the website URL for the company "{req.business_name}"{industry_hint}{location}? '
-                    f'Reply with ONLY the bare URL, nothing else. Example: https://example.com'}])
-            url = resp.content[0].text.strip().split()[0]
-            if url.startswith("http") and "." in url:
-                website_url = url.rstrip("/")
-        except Exception:
-            pass
+    if not website_url:
+        prompt = f'What is the website for {req.business_name}? Just the URL, nothing else.'
+        # Try each available LLM
+        for provider in ["openai", "anthropic"]:
+            if provider not in api_keys or website_url:
+                continue
+            try:
+                if provider == "openai":
+                    import openai as _openai
+                    client = _openai.OpenAI(api_key=api_keys["openai"])
+                    resp = client.chat.completions.create(
+                        model="gpt-4o", max_tokens=50,
+                        messages=[{"role": "user", "content": prompt}])
+                    url = resp.choices[0].message.content.strip().split()[0]
+                elif provider == "anthropic":
+                    import anthropic as _anthropic
+                    client = _anthropic.Anthropic(api_key=api_keys["anthropic"])
+                    resp = client.messages.create(
+                        model="claude-sonnet-4-20250514", max_tokens=50,
+                        messages=[{"role": "user", "content": prompt}])
+                    url = resp.content[0].text.strip().split()[0]
+                if url.startswith("http") and "." in url and len(url) < 100:
+                    website_url = url.rstrip("/")
+            except Exception:
+                continue
 
     # Live audit
     loop = asyncio.get_event_loop()
