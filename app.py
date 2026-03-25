@@ -374,12 +374,10 @@ async def run_audit(req: AuditRequest):
                 if url.startswith("http") and "." in url and len(url) < 100:
                     website_url = url.rstrip("/")
             except Exception as e:
-                import traceback, sys
-                print(f"[DISCOVER] {provider} error: {e}", file=sys.stderr)
-                traceback.print_exc()
+                print(f"[DISCOVER] {provider} error: {e}", flush=True)
                 continue
 
-    print(f"[DISCOVER] Final website_url = {website_url}", file=sys.stderr, flush=True)
+    print(f"[DISCOVER] Final website_url = {website_url}", flush=True)
 
     # Live audit
     loop = asyncio.get_event_loop()
