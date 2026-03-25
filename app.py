@@ -39,8 +39,8 @@ executor = ThreadPoolExecutor(max_workers=4)
 
 class AuditRequest(BaseModel):
     business_name: str
-    industry: str
-    city: str
+    industry: str = ""
+    city: str = ""
     website_url: Optional[str] = None
     phone: Optional[str] = None
     demo: bool = False
