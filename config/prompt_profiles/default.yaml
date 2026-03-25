@@ -2,22 +2,25 @@ display_name: Default
 aliases: []
 clusters:
   branded:
-    - template: "What do people say about {business_name} in {service_area}?"
-    - template: "Would you recommend {business_name} for {industry} in {service_area}?"
+    - template: "Tell me about {business_name}. What do they do and are they reputable?"
+    - template: "What do people say about {business_name}? Would you recommend them?"
+    - template: "Have you heard of {business_name}? What's their reputation in the {industry} space?"
   discovery:
-    - template: "Who are the best {industry} providers in {city}?"
-    - template: "What are the top-rated {industry} options near {service_area}?"
+    - template: "Who are the top companies in {industry}?"
+    - template: "I'm looking for the best {industry} companies. Who should I consider?"
+    - template: "What companies are leading the {industry} space right now?"
   comparison:
-    - template: "Compare the best {industry} options in {city}."
-    - template: "How does {business_name} compare to {competitor_names} for {industry} in {service_area}?"
-      requires_competitors: true
+    - template: "Who are {business_name}'s main competitors?"
+    - template: "Compare {business_name} to their top competitors in {industry}."
+    - template: "If I'm evaluating {business_name}, who else should I look at?"
   urgency:
-    - template: "I need {industry} help quickly in {service_area}. Who should I call?"
+    - template: "I need a {industry} partner quickly. Who are the top options?"
   trust:
-    - template: "Which {industry} business in {city} is the most trusted?"
+    - template: "Which {industry} companies are the most trusted and established?"
+    - template: "Who has the best track record in {industry}?"
   price:
-    - template: "What should I expect to pay for {industry} in {service_area}?"
+    - template: "What should I expect to pay for {industry} services?"
   symptom_problem:
-    - template: "Who can help with a common {industry} problem in {service_area}?"
+    - template: "What companies can help if I need better results from my {industry} strategy?"
   follow_up:
-    - template: "If my first choice for {industry} in {service_area} is unavailable, who is the next best option?"
+    - template: "Besides {business_name}, who else is strong in {industry}?"

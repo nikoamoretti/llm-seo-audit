@@ -241,7 +241,7 @@ def _discover_business(business_name: str, api_keys: dict) -> dict:
             import openai as _openai
             client = _openai.OpenAI(api_key=api_keys["openai"])
             resp = client.chat.completions.create(
-                model="gpt-4.1",
+                model="gpt-5.4",
                 max_completion_tokens=200,
                 response_format={"type": "json_object"},
                 messages=[
