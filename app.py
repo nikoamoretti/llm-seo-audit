@@ -241,37 +241,44 @@ async def _auto_discover_website(business_name: str, industry: str, city: str, a
             parsed = urlparse(url)
             if not parsed.netloc or "." not in parsed.netloc:
                 return None
-            # Skip social media, directories, etc.
             skip_domains = ["facebook.com", "linkedin.com", "twitter.com", "instagram.com",
                             "yelp.com", "bbb.org", "glassdoor.com", "indeed.com",
                             "crunchbase.com", "wikipedia.org", "youtube.com"]
             if any(d in parsed.netloc for d in skip_domains):
                 return None
-            resp = requests.head(url, timeout=5, allow_redirects=True,
-                                 headers={"User-Agent": "Mozilla/5.0"})
+            # Try GET (some hosts block HEAD)
+            resp = requests.get(url, timeout=8, allow_redirects=True,
+                                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
+                                stream=True)
+            resp.close()
             if resp.status_code < 400:
                 return resp.url.rstrip("/")
         except Exception:
             pass
         return None
 
-    # Strategy 1: DuckDuckGo search (no API key needed)
+    # Strategy 1: Heuristic — try {name}.com (fastest, no external search)
+    name_slug = re.sub(r'[^a-z0-9]', '', business_name.lower())
+    for domain in [f"https://{name_slug}.com", f"https://www.{name_slug}.com"]:
+        validated = _validate_url(domain)
+        if validated:
+            return validated
+
+    # Strategy 2: DuckDuckGo search
     try:
         location = f" {city}" if city else ""
         query = f"{business_name}{location} official website"
         ddg_resp = requests.get(
             "https://html.duckduckgo.com/html/",
             params={"q": query},
-            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
             timeout=8,
         )
         if ddg_resp.status_code == 200:
-            # Extract URLs from DuckDuckGo results
             urls = re.findall(r'href="(https?://[^"]+)"', ddg_resp.text)
             for url in urls[:10]:
                 if "duckduckgo.com" in url:
                     continue
-                # Extract actual URL from DDG redirect
                 if "uddg=" in url:
                     from urllib.parse import parse_qs, urlparse as _urlparse
                     qs = parse_qs(_urlparse(url).query)
@@ -281,13 +288,6 @@ async def _auto_discover_website(business_name: str, industry: str, city: str, a
                     return validated
     except Exception:
         pass
-
-    # Strategy 2: Heuristic — try {name}.com
-    name_slug = re.sub(r'[^a-z0-9]', '', business_name.lower())
-    for domain in [f"https://{name_slug}.com", f"https://www.{name_slug}.com"]:
-        validated = _validate_url(domain)
-        if validated:
-            return validated
 
     # Strategy 3: LLM fallback
     location = f" in {city}" if city else ""
