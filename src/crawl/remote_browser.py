@@ -141,7 +141,7 @@ def fetch_via_browserbase(url: str) -> BrowserFetchResult:
     session = None
     try:
         bb = Browserbase(api_key=api_key)
-        session = bb.sessions.create(project_id=project_id, proxies=True)
+        session = bb.sessions.create(project_id=project_id)
         connect_url = session.connect_url
         logger.info("Browserbase session %s created for %s", session.id, url)
 
