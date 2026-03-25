@@ -7,6 +7,7 @@ GEO_Score = 0.55 * V + 0.45 * R
 
 import asyncio
 import json
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
@@ -32,6 +33,8 @@ from src.scoring.final import score_final
 from src.scoring.readiness import score_readiness
 from src.scoring.visibility import score_visibility
 from web_presence import WebPresenceChecker
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="GEO Audit Tool")
 executor = ThreadPoolExecutor(max_workers=4)
@@ -318,6 +321,11 @@ async def run_audit(req: AuditRequest):
             industry = discovered.get("industry") or ""
         if not city:
             city = discovered.get("city") or ""
+        if not website_url and not industry and not city:
+            logger.warning(
+                "Auto-discovery returned no data for %r; proceeding with empty fields",
+                req.business_name,
+            )
 
     # Live audit
     loop = asyncio.get_event_loop()
@@ -541,6 +549,11 @@ async def lookup_business(req: LookupRequest):
             continue
 
     return {"results": [], "found": False}
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 
 @app.get("/", response_class=HTMLResponse)

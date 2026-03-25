@@ -52,6 +52,10 @@ class ExtractedPageFacts:
 
 
 def extract_page_facts(page: CrawlPage) -> ExtractedPageFacts:
+    # Skip entity extraction from blocked/unusable pages entirely
+    if getattr(page, "blocked", False) or not page.html.strip():
+        return ExtractedPageFacts(url=page.url, page_type=page.page_type)
+
     soup = BeautifulSoup(page.html, "html.parser")
     text = soup.get_text("\n", strip=True)
     schema_payloads = _schema_payloads(soup)

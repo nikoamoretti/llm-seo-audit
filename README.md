@@ -12,18 +12,31 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-## API keys
+## API keys / Fly secrets
 
-LLM querying uses the provider keys already supported by the app.
+The following environment variables are used. On Fly.io, set them as secrets:
 
-Directory checks now use official APIs and need these environment variables:
+| Variable | Required | Purpose |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Yes (or OpenAI) | LLM prompt querying (Claude) |
+| `OPENAI_API_KEY` | Yes (or Anthropic) | LLM prompt querying (GPT) |
+| `BROWSERBASE_API_KEY` | Optional | Remote browser for Cloudflare-blocked sites |
+| `BROWSERBASE_PROJECT_ID` | Optional | Remote browser project ID |
+| `GOOGLE_PLACES_API_KEY` | Optional | Google Business directory checks and lookup |
+| `YELP_API_KEY` | Optional | Yelp directory checks |
 
-```bash
-export YELP_API_KEY=your_key_here
-export GOOGLE_PLACES_API_KEY=your_key_here
-```
+If a key is missing, the audit gracefully degrades:
+- Without Browserbase, Cloudflare-blocked sites show as **unavailable** rather than returning fake data from block pages.
+- Without directory API keys, those checks show as `NOT CHECKED`.
 
-If either key is missing, the audit leaves that directory check as `NOT CHECKED` instead of incorrectly reporting that the business is not listed.
+End users install nothing -- all browser work is server-side via Browserbase's managed Chromium instances. The `connect_over_cdp` approach means no local browser binary is needed in the Docker image.
+
+### Honest fallback behavior
+
+When a site is protected by Cloudflare or another WAF:
+1. The direct HTTP fetch detects the block page (Cloudflare markers, captcha, interstitial titles).
+2. If Browserbase is configured, the fetch retries through a remote browser session with proxies.
+3. If both methods fail or Browserbase is not configured, readiness checks for that site are marked **unavailable** (not failed). This prevents garbage WAF HTML from being parsed as business content.
 
 ## Sprint 1 architecture
 
@@ -116,6 +129,18 @@ The HTML report and browser UI now focus on:
 The new browser/report layer is presentation-only. It does not change score_v2 behavior.
 
 The browser UI renderer in `ui.html` is now split into section helpers instead of one large result builder, and the E2E tests under `tests/e2e/` now run in a real Chromium browser via Playwright.
+
+## Sprint 8 Browserbase integration
+
+Sites behind Cloudflare or other WAFs now get honest handling instead of garbage extraction:
+
+- `src/crawl/remote_browser.py` wraps the Browserbase SDK to fetch pages through a managed remote browser with proxies.
+- `src/crawl/fetcher.py` detects blocked/interstitial pages after the direct HTTP fetch and retries through Browserbase when configured.
+- `FetchResult` and `CrawlPage` now carry `fetch_method` ("direct", "browserbase", "unavailable") and `blocked` fields.
+- `web_presence.py` skips entity extraction from blocked pages and marks all readiness checks as unavailable (None) rather than failing them (False).
+- `src/entity/reconciler.py` now uses the user-submitted business name as the canonical name, keeping extracted names in metadata only.
+- `src/core/audit_builder.py` and `src/presentation/view_model.py` enforce this so Cloudflare titles never appear in headlines.
+- `app.py` adds a `GET /health` endpoint returning `{"status": "ok"}`.
 
 ## CI and canaries
 

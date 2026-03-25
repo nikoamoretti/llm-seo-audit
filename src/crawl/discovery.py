@@ -111,6 +111,8 @@ class SiteDiscovery:
             title=self._title_from_html(result.html),
             text=text,
             load_time_seconds=result.load_time_seconds,
+            fetch_method=getattr(result, "fetch_method", "direct"),
+            blocked=getattr(result, "blocked", False),
         )
 
     def _title_from_html(self, html: str) -> str:

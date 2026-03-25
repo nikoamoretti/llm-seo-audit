@@ -26,10 +26,17 @@ class FetchResult:
     content_type: str
     load_time_seconds: Optional[float] = None
     error: Optional[str] = None
+    fetch_method: str = "direct"        # "direct", "browserbase", or "unavailable"
+    blocked: bool = False               # True when the page was a WAF/captcha block
 
     @property
     def ok(self) -> bool:
-        return self.status_code == 200 and "html" in self.content_type and bool(self.html.strip())
+        return (
+            self.status_code == 200
+            and "html" in self.content_type
+            and bool(self.html.strip())
+            and not self.blocked
+        )
 
 
 @dataclass
@@ -43,6 +50,8 @@ class CrawlPage:
     title: str = ""
     text: str = ""
     load_time_seconds: Optional[float] = None
+    fetch_method: str = "direct"
+    blocked: bool = False
 
 
 @dataclass

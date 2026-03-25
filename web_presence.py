@@ -60,41 +60,24 @@ class WebPresenceChecker:
 
     def _crawl_site_readiness(self, business_name: str, website_url: str, city: str) -> dict:
         discovery = self.discovery.discover(website_url)
-        if not discovery.pages:
-            return {
-                "has_schema_markup": False,
-                "schema_types": [],
-                "has_faq_schema": False,
-                "has_local_business_schema": False,
-                "has_og_tags": False,
-                "has_meta_description": False,
-                "has_title_tag": False,
-                "ssl_valid": False,
-                "mobile_friendly_meta": False,
-                "fast_load": False,
-                "load_time_seconds": None,
-                "website_accessible": False,
-                "has_canonical": False,
-                "has_hreflang": False,
-                "has_answer_blocks": False,
-                "answer_block_count": 0,
-                "word_count": 0,
-                "has_faq_section": False,
-                "faq_count": 0,
-                "has_contact_info": False,
-                "has_hours": False,
-                "has_address": False,
-                "has_booking_cta": False,
-                "has_contact_cta": False,
-                "discovered_page_count": 0,
-                "page_types": [],
-                "service_names": [],
-                "service_areas": [],
-                "trust_signals": [],
-                "extracted_entity": {},
-            }
 
-        page_facts = [extract_page_facts(page) for page in discovery.pages]
+        # All pages blocked or none fetched → mark everything unavailable
+        if not discovery.pages:
+            return self._unavailable_site_results()
+
+        # Filter out blocked/unusable pages before extraction
+        usable_pages = [p for p in discovery.pages if not getattr(p, "blocked", False)]
+        all_blocked = len(usable_pages) == 0
+
+        if all_blocked:
+            logger.warning(
+                "All %d crawled pages for %s were blocked; marking site checks unavailable",
+                len(discovery.pages),
+                website_url,
+            )
+            return self._unavailable_site_results()
+
+        page_facts = [extract_page_facts(page) for page in usable_pages]
         entity = reconcile_business_entity(
             page_facts,
             business_name=business_name,
@@ -140,7 +123,7 @@ class WebPresenceChecker:
             "load_time_seconds": homepage.load_time_seconds if homepage else None,
             "website_accessible": homepage is not None,
             "has_canonical": any(facts.has_canonical for facts in page_facts),
-            "has_hreflang": any("hreflang" in page.html.lower() for page in discovery.pages),
+            "has_hreflang": any("hreflang" in page.html.lower() for page in usable_pages),
             "has_answer_blocks": any(facts.has_answer_blocks for facts in page_facts),
             "answer_block_count": sum(len(facts.faq_questions) for facts in page_facts),
             "word_count": sum(facts.word_count for facts in page_facts),
@@ -151,12 +134,49 @@ class WebPresenceChecker:
             "has_address": bool(entity.address),
             "has_booking_cta": bool(entity.has_booking_cta),
             "has_contact_cta": bool(entity.has_contact_cta),
-            "discovered_page_count": len(discovery.pages),
-            "page_types": sorted({page.page_type for page in discovery.pages}),
+            "discovered_page_count": len(usable_pages),
+            "page_types": sorted({page.page_type for page in usable_pages}),
             "service_names": entity.service_names,
             "service_areas": entity.service_areas,
             "trust_signals": entity.trust_signals,
             "extracted_entity": entity.model_dump(mode="json"),
+        }
+
+    @staticmethod
+    def _unavailable_site_results() -> dict:
+        """Return a result dict where every check is marked unavailable / zero."""
+        return {
+            "has_schema_markup": None,
+            "schema_types": [],
+            "has_faq_schema": None,
+            "has_local_business_schema": None,
+            "has_og_tags": None,
+            "has_meta_description": None,
+            "has_title_tag": None,
+            "ssl_valid": None,
+            "mobile_friendly_meta": None,
+            "fast_load": None,
+            "load_time_seconds": None,
+            "website_accessible": False,
+            "has_canonical": None,
+            "has_hreflang": None,
+            "has_answer_blocks": None,
+            "answer_block_count": 0,
+            "word_count": 0,
+            "has_faq_section": None,
+            "faq_count": 0,
+            "has_contact_info": None,
+            "has_hours": None,
+            "has_address": None,
+            "has_booking_cta": None,
+            "has_contact_cta": None,
+            "discovered_page_count": 0,
+            "page_types": [],
+            "service_names": [],
+            "service_areas": [],
+            "trust_signals": [],
+            "extracted_entity": {},
+            "site_blocked": True,
         }
 
     def _check_website(self, url: str) -> dict:

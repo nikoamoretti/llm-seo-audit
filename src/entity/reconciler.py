@@ -28,7 +28,10 @@ def reconcile_business_entity(
     city: str = "",
     website_url: str | None = None,
 ) -> BusinessEntity:
-    chosen_name, name_confidence = _pick_scalar(
+    # The extracted name is kept for metadata only; the canonical displayed
+    # name always equals the user-submitted business_name so that
+    # Cloudflare challenge titles, interstitial text, etc. never replace it.
+    extracted_name, name_confidence = _pick_scalar(
         page_facts,
         lambda facts: facts.business_name,
     )
@@ -51,7 +54,7 @@ def reconcile_business_entity(
     schema_types = _merge_lists(page_facts, lambda facts: facts.schema_types)
 
     return BusinessEntity(
-        business_name=chosen_name or business_name or "",
+        business_name=business_name or extracted_name or "",
         industry=industry,
         city=city,
         website_url=website_url,

@@ -216,7 +216,10 @@ def _build_summary(
             "Citation evidence was unavailable or incomplete, so source-authority insights are inconclusive."
         )
 
-    headline = f"{audit_run.entity.business_name} scores {final_score}/100 on the GEO audit."
+    # Always use the submitted (input) business name for the headline so
+    # that Cloudflare challenge page titles or extracted garbage never appear.
+    display_name = audit_run.input.business_name or audit_run.entity.business_name
+    headline = f"{display_name} scores {final_score}/100 on the GEO audit."
     overview = (
         f"Readiness is {readiness_score}/100, visibility is {visibility_score}/100, and the business is "
         f"mentioned in {mention_rate}% of prompts. {_citation_overview(citation_breakdown)}"

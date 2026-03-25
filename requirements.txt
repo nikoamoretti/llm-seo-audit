@@ -16,3 +16,4 @@ ruff>=0.6.0
 mypy>=1.11.0
 PyYAML>=6.0.2
 playwright>=1.52.0
+browserbase>=1.0.0

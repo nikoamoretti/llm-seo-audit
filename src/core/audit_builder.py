@@ -118,7 +118,9 @@ def _build_entity(
     extracted = web_presence.get("extracted_entity")
     if isinstance(extracted, dict):
         payload = dict(extracted)
-        payload.setdefault("business_name", business_name)
+        # The submitted business_name is authoritative -- never let
+        # web-extracted names (which may be Cloudflare titles) override it.
+        payload["business_name"] = business_name
         payload.setdefault("industry", industry)
         payload.setdefault("city", city)
         payload.setdefault("website_url", website_url)
