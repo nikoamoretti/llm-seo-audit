@@ -57,8 +57,13 @@ class TestBlockedPageDetection:
         assert is_blocked_page(html) is True
 
     def test_shopify_password_page(self):
-        html = "<html><body>This store is powered by Shopify. Enter password to continue.</body></html>"
+        html = '<html><body>This store is powered by Shopify. <input type="password" id="password"></body></html>'
         assert is_blocked_page(html, final_url="https://example.com/password") is True
+
+    def test_shopify_password_url_with_real_content_not_blocked(self):
+        """Shopify /password URL with OG tags and real content should NOT be blocked."""
+        html = '<html><head><meta property="og:title" content="My Store"></head><body>Shopify store content</body></html>'
+        assert is_blocked_page(html, final_url="https://example.com/password") is False
 
     def test_shopify_without_password_url(self):
         """Shopify marker alone without /password URL should not trigger."""

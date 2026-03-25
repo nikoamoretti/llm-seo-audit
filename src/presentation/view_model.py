@@ -198,14 +198,36 @@ def _build_summary(
     data_notes: list[str] = []
     if audit_run.mode == "demo":
         data_notes.append("Demo mode uses simulated prompt and website inputs.")
+
+    # --- Website accessibility messaging ---
+    website_url = audit_run.input.website_url or audit_run.entity.website_url
+    web_presence = audit_run.web_presence or {}
+    site_accessible = web_presence.get("website_accessible")
+
+    if not website_url:
+        data_notes.append(
+            "No website was available for this business, so website-readiness "
+            "checks were not included. The audit still evaluated other verifiable signals."
+        )
+    elif site_accessible is False or site_accessible is None:
+        data_notes.append(
+            "This audit completed with partial data. The business website could "
+            "not be accessed, so website-based checks were marked unavailable "
+            "rather than estimated. Remaining results are based on other verifiable signals."
+        )
+
     readiness_states = [dimension.state for dimension in audit_run.readiness.dimensions.values()]
     if any(state == "unavailable" for state in readiness_states):
-        data_notes.append(
-            "Some readiness signals were unavailable, so incomplete evidence is shown separately from verified gaps."
-        )
+        # Only add the generic readiness note if we haven't already explained why
+        if website_url and site_accessible is not False and site_accessible is not None:
+            data_notes.append(
+                "Some readiness signals were unavailable, so incomplete evidence "
+                "is shown separately from verified gaps."
+            )
     elif any(state == "unknown" for state in readiness_states):
         data_notes.append(
-            "Some readiness signals were not fully checked, so incomplete evidence is shown separately from verified gaps."
+            "Some readiness signals were not fully checked, so incomplete evidence "
+            "is shown separately from verified gaps."
         )
     if not audit_run.visibility.prompt_results:
         data_notes.append("No prompt results were captured, so visibility insights are limited.")
