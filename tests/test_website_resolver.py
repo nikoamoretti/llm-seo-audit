@@ -376,7 +376,7 @@ class TestReportCopyDiffers:
         invalid_text = " ".join(notes_invalid)
         blocked_text = " ".join(notes_blocked)
 
-        assert "No official website could be identified" in no_site_text
+        assert "No official website was identified" in no_site_text
         assert "provided website URL could not be reached" in invalid_text
         assert "could not be accessed" in blocked_text
 

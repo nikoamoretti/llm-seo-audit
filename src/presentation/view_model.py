@@ -205,28 +205,33 @@ def _build_summary(
     site_accessible = web_presence.get("website_accessible")
     resolution_status = web_presence.get("_resolution_status", "")
 
-    if resolution_status == "no_website_identified":
+    # Determine the website state for copy
+    crawl_error = web_presence.get("_crawl_error")
+
+    if resolution_status == "no_website_identified" or (not website_url and not resolution_status):
         data_notes.append(
-            "No official website could be identified for this business. "
-            "Website-readiness checks were not included. The audit evaluated "
-            "other verifiable signals."
+            "No official website was identified for this business, so "
+            "website-based checks were not included. Remaining results "
+            "are based on other verifiable signals."
         )
     elif resolution_status == "invalid_user_url":
         data_notes.append(
-            "The provided website URL could not be reached. Website-based "
+            "The provided website URL could not be reached, so website-based "
             "checks were marked unavailable. Remaining results are based on "
             "other verifiable signals."
         )
-    elif not website_url:
+    elif website_url and crawl_error:
         data_notes.append(
-            "No website was available for this business, so website-readiness "
-            "checks were not included. The audit still evaluated other verifiable signals."
+            "The business website was identified, but website-based checks "
+            "could not be completed due to a crawl failure in this run. "
+            "Remaining results are based on other verifiable signals."
         )
-    elif site_accessible is False or site_accessible is None:
+    elif website_url and (site_accessible is False or site_accessible is None):
         data_notes.append(
-            "This audit completed with partial data. The business website could "
-            "not be accessed, so website-based checks were marked unavailable "
-            "rather than estimated. Remaining results are based on other verifiable signals."
+            "The business website was identified but could not be accessed "
+            "during the audit, so website-based checks were marked unavailable "
+            "rather than estimated. Remaining results are based on other "
+            "verifiable signals."
         )
 
     readiness_states = [dimension.state for dimension in audit_run.readiness.dimensions.values()]

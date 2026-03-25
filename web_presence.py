@@ -48,10 +48,15 @@ class WebPresenceChecker:
         results = {}
 
         if website_url:
-            site_results = self._crawl_site_readiness(business_name, website_url, city)
-            results.update(site_results)
-            index_results = self._check_indexability(website_url)
-            results.update(index_results)
+            try:
+                site_results = self._crawl_site_readiness(business_name, website_url, city)
+                results.update(site_results)
+                index_results = self._check_indexability(website_url)
+                results.update(index_results)
+            except Exception as exc:
+                logger.error("Crawl failed for %s: %s", website_url, exc)
+                results.update(self._unavailable_site_results())
+                results["_crawl_error"] = str(exc)
 
         dir_results = self._check_directories(business_name, city)
         results.update(dir_results)
