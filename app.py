@@ -225,103 +225,46 @@ def compute_geo_score(readiness: dict, visibility: dict, has_web: bool) -> dict:
     }
 
 
-# ─── Auto-discovery ───────────────────────────────────────────────────
-
-async def _auto_discover_website(business_name: str, industry: str, city: str, api_keys: dict) -> Optional[str]:
-    """Find the business website via web search, heuristic guess, or LLM fallback."""
+def _discover_website(business_name: str, api_keys: dict) -> Optional[str]:
+    """Find the business website. Uses OpenAI JSON mode for reliable structured output."""
     import re
-    from urllib.parse import urlparse
-
-    def _validate_url(url: str) -> Optional[str]:
-        """Check if a URL looks valid and is reachable."""
-        url = url.strip().rstrip("/")
-        if not url.startswith("http"):
-            url = "https://" + url
+    if "openai" in api_keys:
         try:
-            parsed = urlparse(url)
-            if not parsed.netloc or "." not in parsed.netloc:
-                return None
-            skip_domains = ["facebook.com", "linkedin.com", "twitter.com", "instagram.com",
-                            "yelp.com", "bbb.org", "glassdoor.com", "indeed.com",
-                            "crunchbase.com", "wikipedia.org", "youtube.com"]
-            if any(d in parsed.netloc for d in skip_domains):
-                return None
-            # Try GET (some hosts block HEAD)
-            resp = requests.get(url, timeout=8, allow_redirects=True,
-                                headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
-                                stream=True)
-            resp.close()
-            if resp.status_code < 400:
-                return resp.url.rstrip("/")
+            import openai as _openai
+            client = _openai.OpenAI(api_key=api_keys["openai"])
+            resp = client.chat.completions.create(
+                model="gpt-4.1",
+                max_completion_tokens=100,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": "Return JSON only."},
+                    {"role": "user", "content": f'Return the official website URL for "{business_name}" as JSON: {{"url": "https://..."}}. If unknown return {{"url": null}}'}
+                ])
+            import json
+            data = json.loads(resp.choices[0].message.content)
+            url = data.get("url")
+            if url and url.startswith("http"):
+                return url.rstrip("/")
         except Exception:
             pass
-        return None
-
-    # Strategy 1: Heuristic — try {name}.com (fastest, no external search)
-    name_slug = re.sub(r'[^a-z0-9]', '', business_name.lower())
-    for domain in [f"https://{name_slug}.com", f"https://www.{name_slug}.com"]:
-        validated = _validate_url(domain)
-        if validated:
-            return validated
-
-    # Strategy 2: DuckDuckGo search
-    try:
-        location = f" {city}" if city else ""
-        query = f"{business_name}{location} official website"
-        ddg_resp = requests.get(
-            "https://html.duckduckgo.com/html/",
-            params={"q": query},
-            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"},
-            timeout=8,
-        )
-        if ddg_resp.status_code == 200:
-            urls = re.findall(r'href="(https?://[^"]+)"', ddg_resp.text)
-            for url in urls[:10]:
-                if "duckduckgo.com" in url:
-                    continue
-                if "uddg=" in url:
-                    from urllib.parse import parse_qs, urlparse as _urlparse
-                    qs = parse_qs(_urlparse(url).query)
-                    url = qs.get("uddg", [url])[0]
-                validated = _validate_url(url)
-                if validated:
-                    return validated
-    except Exception:
-        pass
-
-    # Strategy 3: LLM fallback
-    location = f" in {city}" if city else ""
-    industry_hint = f" ({industry})" if industry else ""
-    prompt = (
-        f'What is the official website URL for "{business_name}"{industry_hint}{location}?\n\n'
-        "Reply with ONLY the URL (e.g. https://example.com). "
-        "If you are not confident, reply with just: UNKNOWN"
-    )
-    for provider in ["anthropic", "openai"]:
-        if provider not in api_keys:
-            continue
+    if "anthropic" in api_keys:
         try:
-            text = ""
-            if provider == "openai":
-                import openai as _openai
-                client = _openai.OpenAI(api_key=api_keys["openai"])
-                resp = client.chat.completions.create(
-                    model="gpt-4o-mini", max_tokens=100,
-                    messages=[{"role": "user", "content": prompt}])
-                text = resp.choices[0].message.content.strip()
-            elif provider == "anthropic":
-                import anthropic as _anthropic
-                client = _anthropic.Anthropic(api_key=api_keys["anthropic"])
-                resp = client.messages.create(
-                    model="claude-sonnet-4-20250514", max_tokens=100,
-                    messages=[{"role": "user", "content": prompt}])
-                text = resp.content[0].text.strip()
-            if text and text.startswith("http") and "UNKNOWN" not in text.upper() and " " not in text:
-                validated = _validate_url(text)
-                if validated:
-                    return validated
+            import anthropic as _anthropic
+            client = _anthropic.Anthropic(api_key=api_keys["anthropic"])
+            resp = client.messages.create(
+                model="claude-sonnet-4-6", max_tokens=100,
+                messages=[{"role": "user", "content": f'Return ONLY a JSON object with the official website URL for "{business_name}": {{"url": "https://..."}}. If unknown: {{"url": null}}'}])
+            import json
+            text = resp.content[0].text.strip()
+            # Extract JSON from response
+            match = re.search(r'\{[^}]+\}', text)
+            if match:
+                data = json.loads(match.group())
+                url = data.get("url")
+                if url and url.startswith("http"):
+                    return url.rstrip("/")
         except Exception:
-            continue
+            pass
     return None
 
 
@@ -351,34 +294,7 @@ async def run_audit(req: AuditRequest):
     # Auto-discover website if not provided
     website_url = req.website_url
     if not website_url:
-        prompt = f'What is the website for {req.business_name}? Just the URL, nothing else.'
-        # Try each available LLM
-        for provider in ["openai", "anthropic"]:
-            if provider not in api_keys or website_url:
-                continue
-            try:
-                if provider == "openai":
-                    import openai as _openai
-                    client = _openai.OpenAI(api_key=api_keys["openai"])
-                    resp = client.chat.completions.create(
-                        model="gpt-4o", max_tokens=50,
-                        messages=[{"role": "user", "content": prompt}])
-                    url = resp.choices[0].message.content.strip().split()[0]
-                elif provider == "anthropic":
-                    import anthropic as _anthropic
-                    client = _anthropic.Anthropic(api_key=api_keys["anthropic"])
-                    resp = client.messages.create(
-                        model="claude-sonnet-4-20250514", max_tokens=50,
-                        messages=[{"role": "user", "content": prompt}])
-                    url = resp.content[0].text.strip().split()[0]
-                print(f"[DISCOVER] {provider} returned: {repr(url)}", flush=True)
-                if url.startswith("http") and "." in url and len(url) < 100:
-                    website_url = url.rstrip("/")
-            except Exception as e:
-                print(f"[DISCOVER] {provider} error: {e}", flush=True)
-                continue
-
-    print(f"[DISCOVER] Final website_url = {website_url}", flush=True)
+        website_url = _discover_website(req.business_name, api_keys)
 
     # Live audit
     loop = asyncio.get_event_loop()
