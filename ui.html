@@ -1183,7 +1183,15 @@ function selectResult(index) {
 function selectAndFill(r) {
     document.getElementById('businessName').value = r.business_name || '';
     document.getElementById('industry').value = r.industry || '';
-    document.getElementById('city').value = r.city || '';
+    const cityField = document.getElementById('city');
+    cityField.value = r.city || '';
+    if (!r.city) {
+        cityField.style.border = '1.5px solid var(--orange, #f59e0b)';
+        cityField.placeholder = '← Required — enter city';
+        cityField.focus();
+    } else {
+        cityField.style.border = '';
+    }
     document.getElementById('websiteUrl').value = r.website_url || '';
 }
 
@@ -1326,8 +1334,17 @@ async function runAudit(demo = false) {
     const industry = document.getElementById('industry').value.trim();
     const city = document.getElementById('city').value.trim();
     const url = document.getElementById('websiteUrl').value.trim();
-    if (!name || !industry || !city) {
-        alert('Please fill in business name, industry, and city.');
+    const missing = [];
+    if (!name) missing.push('business name');
+    if (!industry) missing.push('industry');
+    if (!city) missing.push('city');
+    if (missing.length) {
+        const field = !city ? 'city' : !industry ? 'industry' : 'businessName';
+        const el = document.getElementById(field);
+        el.style.border = '1.5px solid var(--orange, #f59e0b)';
+        el.focus();
+        el.placeholder = '← Required';
+        setTimeout(() => { el.style.border = ''; }, 3000);
         return;
     }
     stopAudit();
