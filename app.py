@@ -225,6 +225,44 @@ def compute_geo_score(readiness: dict, visibility: dict, has_web: bool) -> dict:
     }
 
 
+# ─── Auto-discovery ───────────────────────────────────────────────────
+
+async def _auto_discover_website(business_name: str, industry: str, city: str, api_keys: dict) -> Optional[str]:
+    """Try to find the business website using available LLMs."""
+    location = f" in {city}" if city else ""
+    industry_hint = f" ({industry})" if industry else ""
+    prompt = (
+        f'What is the official website URL for "{business_name}"{industry_hint}{location}?\n\n'
+        "Reply with ONLY the URL (e.g. https://example.com). "
+        "If you are not confident, reply with just: UNKNOWN"
+    )
+    for provider in ["openai", "anthropic"]:
+        if provider not in api_keys:
+            continue
+        try:
+            text = ""
+            if provider == "openai":
+                import openai as _openai
+                client = _openai.OpenAI(api_key=api_keys["openai"])
+                resp = client.chat.completions.create(
+                    model="gpt-4o-mini", max_tokens=100,
+                    messages=[{"role": "user", "content": prompt}])
+                text = resp.choices[0].message.content.strip()
+            elif provider == "anthropic":
+                import anthropic as _anthropic
+                client = _anthropic.Anthropic(api_key=api_keys["anthropic"])
+                resp = client.messages.create(
+                    model="claude-sonnet-4-20250514", max_tokens=100,
+                    messages=[{"role": "user", "content": prompt}])
+                text = resp.content[0].text.strip()
+            # Validate it looks like a URL
+            if text and text.startswith("http") and "UNKNOWN" not in text.upper() and " " not in text:
+                return text.rstrip("/")
+        except Exception:
+            continue
+    return None
+
+
 # ─── API Endpoints ────────────────────────────────────────────────────
 
 @app.post("/api/audit", response_model=AuditUIResponse)
@@ -248,12 +286,17 @@ async def run_audit(req: AuditRequest):
         )
         return build_audit_ui_response(audit_run)
 
+    # Auto-discover website if not provided
+    website_url = req.website_url
+    if not website_url:
+        website_url = await _auto_discover_website(req.business_name, req.industry, req.city, api_keys)
+
     # Live audit
     loop = asyncio.get_event_loop()
     llm_results, web_results = await loop.run_in_executor(
         executor, run_live_audit,
         req.business_name, req.industry, req.city,
-        req.website_url, req.phone, api_keys
+        website_url, req.phone, api_keys
     )
 
     audit_run = build_audit_run(
@@ -261,7 +304,7 @@ async def run_audit(req: AuditRequest):
         business_name=req.business_name,
         industry=req.industry,
         city=req.city,
-        website_url=req.website_url,
+        website_url=website_url,
         phone=req.phone,
         web_presence=web_results,
         llm_results=llm_results,
