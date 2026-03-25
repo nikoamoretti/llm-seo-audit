@@ -351,13 +351,24 @@ async def run_audit(req: AuditRequest):
     # Auto-discover website if not provided
     website_url = req.website_url
     if not website_url:
-        import logging
-        logging.info(f"[GEO] No website provided, auto-discovering for '{req.business_name}'...")
-        website_url = await _auto_discover_website(req.business_name, req.industry, req.city, api_keys)
-        logging.info(f"[GEO] Auto-discovered website: {website_url}")
-    else:
-        import logging
-        logging.info(f"[GEO] Using provided website: {website_url}")
+        import logging, re as _re
+        logging.info(f"[GEO] No website provided, trying discovery for '{req.business_name}'...")
+        name_slug = _re.sub(r'[^a-z0-9]', '', req.business_name.lower())
+        if name_slug:
+            for candidate in [f"https://{name_slug}.com", f"https://www.{name_slug}.com"]:
+                try:
+                    r = requests.get(candidate, timeout=8, allow_redirects=True,
+                                     headers={"User-Agent": "Mozilla/5.0"}, stream=True)
+                    r.close()
+                    if r.status_code < 400:
+                        website_url = r.url.rstrip("/")
+                        logging.info(f"[GEO] Heuristic found: {website_url}")
+                        break
+                except Exception as e:
+                    logging.info(f"[GEO] Heuristic failed for {candidate}: {e}")
+        if not website_url:
+            website_url = await _auto_discover_website(req.business_name, req.industry, req.city, api_keys)
+            logging.info(f"[GEO] Full discovery result: {website_url}")
 
     # Live audit
     loop = asyncio.get_event_loop()
