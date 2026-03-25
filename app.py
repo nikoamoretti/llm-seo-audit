@@ -348,27 +348,24 @@ async def run_audit(req: AuditRequest):
         )
         return build_audit_ui_response(audit_run)
 
-    # Auto-discover website if not provided
+    # Auto-discover website if not provided — use Claude directly (most reliable)
     website_url = req.website_url
-    if not website_url:
-        import logging, re as _re
-        logging.info(f"[GEO] No website provided, trying discovery for '{req.business_name}'...")
-        name_slug = _re.sub(r'[^a-z0-9]', '', req.business_name.lower())
-        if name_slug:
-            for candidate in [f"https://{name_slug}.com", f"https://www.{name_slug}.com"]:
-                try:
-                    r = requests.get(candidate, timeout=8, allow_redirects=True,
-                                     headers={"User-Agent": "Mozilla/5.0"}, stream=True)
-                    r.close()
-                    if r.status_code < 400:
-                        website_url = r.url.rstrip("/")
-                        logging.info(f"[GEO] Heuristic found: {website_url}")
-                        break
-                except Exception as e:
-                    logging.info(f"[GEO] Heuristic failed for {candidate}: {e}")
-        if not website_url:
-            website_url = await _auto_discover_website(req.business_name, req.industry, req.city, api_keys)
-            logging.info(f"[GEO] Full discovery result: {website_url}")
+    if not website_url and "anthropic" in api_keys:
+        try:
+            import anthropic as _anthropic
+            client = _anthropic.Anthropic(api_key=api_keys["anthropic"])
+            location = f" in {req.city}" if req.city else ""
+            industry_hint = f" ({req.industry})" if req.industry else ""
+            resp = client.messages.create(
+                model="claude-sonnet-4-20250514", max_tokens=50,
+                messages=[{"role": "user", "content":
+                    f'What is the website URL for the company "{req.business_name}"{industry_hint}{location}? '
+                    f'Reply with ONLY the bare URL, nothing else. Example: https://example.com'}])
+            url = resp.content[0].text.strip().split()[0]
+            if url.startswith("http") and "." in url:
+                website_url = url.rstrip("/")
+        except Exception:
+            pass
 
     # Live audit
     loop = asyncio.get_event_loop()
