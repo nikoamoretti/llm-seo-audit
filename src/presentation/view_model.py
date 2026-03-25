@@ -203,8 +203,21 @@ def _build_summary(
     website_url = audit_run.input.website_url or audit_run.entity.website_url
     web_presence = audit_run.web_presence or {}
     site_accessible = web_presence.get("website_accessible")
+    resolution_status = web_presence.get("_resolution_status", "")
 
-    if not website_url:
+    if resolution_status == "no_website_identified":
+        data_notes.append(
+            "No official website could be identified for this business. "
+            "Website-readiness checks were not included. The audit evaluated "
+            "other verifiable signals."
+        )
+    elif resolution_status == "invalid_user_url":
+        data_notes.append(
+            "The provided website URL could not be reached. Website-based "
+            "checks were marked unavailable. Remaining results are based on "
+            "other verifiable signals."
+        )
+    elif not website_url:
         data_notes.append(
             "No website was available for this business, so website-readiness "
             "checks were not included. The audit still evaluated other verifiable signals."

@@ -26,6 +26,7 @@ from demo_mode import DemoAuditor
 from llm_querier import LLMQuerier
 from src.core.audit_builder import build_audit_run, prompt_results_from_llm_results
 from src.core.models import CheckDimension, ReadinessResult, VisibilityResult
+from src.discovery.website_resolver import resolve_website, WebsiteResolution
 from src.presentation import AuditUIResponse, build_audit_ui_response
 from src.prompts.loader import load_prompt_profile, select_prompt_profile
 from src.prompts.renderer import render_prompt_bank
@@ -228,13 +229,12 @@ def compute_geo_score(readiness: dict, visibility: dict, has_web: bool) -> dict:
     }
 
 
-def _discover_business(business_name: str, api_keys: dict) -> dict:
-    """Discover website, industry, and city for a business. Returns dict with url, industry, city."""
-    result = {"url": None, "industry": None, "city": None}
+def _enrich_business_info(business_name: str, api_keys: dict) -> dict:
+    """Discover industry and city for a business using LLMs. Does NOT discover website."""
+    result = {"industry": None, "city": None}
     prompt = (
         f'I need factual information about the company "{business_name}".\n'
         f'Return a JSON object with these fields:\n'
-        f'- "url": their official website URL (e.g. "https://example.com")\n'
         f'- "industry": what they actually do, be specific (e.g. "performance marketing agency", "SaaS logistics platform", "dental practice")\n'
         f'- "city": where they are headquartered (e.g. "Los Angeles, CA")\n'
         f'Use null for any field you cannot determine.'
@@ -253,8 +253,6 @@ def _discover_business(business_name: str, api_keys: dict) -> dict:
                 ])
             import json
             data = json.loads(resp.choices[0].message.content)
-            if data.get("url") and str(data["url"]).startswith("http"):
-                result["url"] = str(data["url"]).rstrip("/")
             if data.get("industry"):
                 result["industry"] = str(data["industry"])
             if data.get("city"):
@@ -274,8 +272,6 @@ def _discover_business(business_name: str, api_keys: dict) -> dict:
             match = re.search(r'\{[^}]*\}', text, re.DOTALL)
             if match:
                 data = json.loads(match.group())
-                if data.get("url") and str(data["url"]).startswith("http"):
-                    result["url"] = str(data["url"]).rstrip("/")
                 if data.get("industry"):
                     result["industry"] = str(data["industry"])
                 if data.get("city"):
@@ -309,23 +305,31 @@ async def run_audit(req: AuditRequest):
         )
         return build_audit_ui_response(audit_run)
 
-    # Auto-discover missing fields (website, industry, city)
-    website_url = req.website_url
+    # Enrich industry/city via LLM if missing
     industry = req.industry
     city = req.city
-    if not website_url or not industry or not city:
-        discovered = _discover_business(req.business_name, api_keys)
-        if not website_url:
-            website_url = discovered.get("url")
+    if not industry or not city:
+        enriched = _enrich_business_info(req.business_name, api_keys)
         if not industry:
-            industry = discovered.get("industry") or ""
+            industry = enriched.get("industry") or ""
         if not city:
-            city = discovered.get("city") or ""
-        if not website_url and not industry and not city:
-            logger.warning(
-                "Auto-discovery returned no data for %r; proceeding with empty fields",
-                req.business_name,
-            )
+            city = enriched.get("city") or ""
+
+    # Resolve website deterministically
+    resolution = resolve_website(
+        business_name=req.business_name,
+        city=city,
+        industry=industry,
+        user_url=req.website_url,
+    )
+    website_url = resolution.url
+    logger.info(
+        "Website resolution for %r: status=%s, source=%s, url=%r",
+        req.business_name,
+        resolution.status,
+        resolution.source,
+        resolution.url,
+    )
 
     # Live audit
     loop = asyncio.get_event_loop()
@@ -334,6 +338,11 @@ async def run_audit(req: AuditRequest):
         req.business_name, industry, city,
         website_url, req.phone, api_keys
     )
+
+    # Attach resolution metadata to web_presence for the presentation layer
+    web_results["_resolution_status"] = resolution.status
+    web_results["_resolution_source"] = resolution.source
+    web_results["_resolution_notes"] = resolution.notes
 
     audit_run = build_audit_run(
         mode="live",
