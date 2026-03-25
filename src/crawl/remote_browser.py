@@ -64,9 +64,14 @@ def is_blocked_page(html: str, final_url: str = "") -> bool:
     if _BLOCKED_META_PATTERN.search(html):
         return True
 
-    # Shopify password gate
+    # Shopify password gate — only if the page is actually a password form,
+    # not a real business page that happens to have "shopify" in the source
     if "/password" in (final_url or "") and "shopify" in lower:
-        return True
+        # Check if it's truly a password gate (has password input, no real content)
+        has_password_input = 'type="password"' in lower or "id=\"password\"" in lower
+        has_real_content = '<meta property="og:' in lower or "<article" in lower
+        if has_password_input and not has_real_content:
+            return True
 
     # Obvious login / interstitial that is NOT a real business page
     title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
