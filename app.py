@@ -228,7 +228,68 @@ def compute_geo_score(readiness: dict, visibility: dict, has_web: bool) -> dict:
 # ─── Auto-discovery ───────────────────────────────────────────────────
 
 async def _auto_discover_website(business_name: str, industry: str, city: str, api_keys: dict) -> Optional[str]:
-    """Try to find the business website using available LLMs."""
+    """Find the business website via web search, heuristic guess, or LLM fallback."""
+    import re
+    from urllib.parse import urlparse
+
+    def _validate_url(url: str) -> Optional[str]:
+        """Check if a URL looks valid and is reachable."""
+        url = url.strip().rstrip("/")
+        if not url.startswith("http"):
+            url = "https://" + url
+        try:
+            parsed = urlparse(url)
+            if not parsed.netloc or "." not in parsed.netloc:
+                return None
+            # Skip social media, directories, etc.
+            skip_domains = ["facebook.com", "linkedin.com", "twitter.com", "instagram.com",
+                            "yelp.com", "bbb.org", "glassdoor.com", "indeed.com",
+                            "crunchbase.com", "wikipedia.org", "youtube.com"]
+            if any(d in parsed.netloc for d in skip_domains):
+                return None
+            resp = requests.head(url, timeout=5, allow_redirects=True,
+                                 headers={"User-Agent": "Mozilla/5.0"})
+            if resp.status_code < 400:
+                return resp.url.rstrip("/")
+        except Exception:
+            pass
+        return None
+
+    # Strategy 1: DuckDuckGo search (no API key needed)
+    try:
+        location = f" {city}" if city else ""
+        query = f"{business_name}{location} official website"
+        ddg_resp = requests.get(
+            "https://html.duckduckgo.com/html/",
+            params={"q": query},
+            headers={"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)"},
+            timeout=8,
+        )
+        if ddg_resp.status_code == 200:
+            # Extract URLs from DuckDuckGo results
+            urls = re.findall(r'href="(https?://[^"]+)"', ddg_resp.text)
+            for url in urls[:10]:
+                if "duckduckgo.com" in url:
+                    continue
+                # Extract actual URL from DDG redirect
+                if "uddg=" in url:
+                    from urllib.parse import parse_qs, urlparse as _urlparse
+                    qs = parse_qs(_urlparse(url).query)
+                    url = qs.get("uddg", [url])[0]
+                validated = _validate_url(url)
+                if validated:
+                    return validated
+    except Exception:
+        pass
+
+    # Strategy 2: Heuristic — try {name}.com
+    name_slug = re.sub(r'[^a-z0-9]', '', business_name.lower())
+    for domain in [f"https://{name_slug}.com", f"https://www.{name_slug}.com"]:
+        validated = _validate_url(domain)
+        if validated:
+            return validated
+
+    # Strategy 3: LLM fallback
     location = f" in {city}" if city else ""
     industry_hint = f" ({industry})" if industry else ""
     prompt = (
@@ -236,7 +297,7 @@ async def _auto_discover_website(business_name: str, industry: str, city: str, a
         "Reply with ONLY the URL (e.g. https://example.com). "
         "If you are not confident, reply with just: UNKNOWN"
     )
-    for provider in ["openai", "anthropic"]:
+    for provider in ["anthropic", "openai"]:
         if provider not in api_keys:
             continue
         try:
@@ -255,9 +316,10 @@ async def _auto_discover_website(business_name: str, industry: str, city: str, a
                     model="claude-sonnet-4-20250514", max_tokens=100,
                     messages=[{"role": "user", "content": prompt}])
                 text = resp.content[0].text.strip()
-            # Validate it looks like a URL
             if text and text.startswith("http") and "UNKNOWN" not in text.upper() and " " not in text:
-                return text.rstrip("/")
+                validated = _validate_url(text)
+                if validated:
+                    return validated
         except Exception:
             continue
     return None
