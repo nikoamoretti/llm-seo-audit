@@ -225,47 +225,62 @@ def compute_geo_score(readiness: dict, visibility: dict, has_web: bool) -> dict:
     }
 
 
-def _discover_website(business_name: str, api_keys: dict) -> Optional[str]:
-    """Find the business website. Uses OpenAI JSON mode for reliable structured output."""
-    import re
+def _discover_business(business_name: str, api_keys: dict) -> dict:
+    """Discover website, industry, and city for a business. Returns dict with url, industry, city."""
+    result = {"url": None, "industry": None, "city": None}
+    prompt = (
+        f'I need factual information about the company "{business_name}".\n'
+        f'Return a JSON object with these fields:\n'
+        f'- "url": their official website URL (e.g. "https://example.com")\n'
+        f'- "industry": what they actually do, be specific (e.g. "performance marketing agency", "SaaS logistics platform", "dental practice")\n'
+        f'- "city": where they are headquartered (e.g. "Los Angeles, CA")\n'
+        f'Use null for any field you cannot determine.'
+    )
     if "openai" in api_keys:
         try:
             import openai as _openai
             client = _openai.OpenAI(api_key=api_keys["openai"])
             resp = client.chat.completions.create(
                 model="gpt-4.1",
-                max_completion_tokens=100,
+                max_completion_tokens=200,
                 response_format={"type": "json_object"},
                 messages=[
-                    {"role": "system", "content": "Return JSON only."},
-                    {"role": "user", "content": f'Return the official website URL for "{business_name}" as JSON: {{"url": "https://..."}}. If unknown return {{"url": null}}'}
+                    {"role": "system", "content": "Return JSON only. Be factually accurate."},
+                    {"role": "user", "content": prompt}
                 ])
             import json
             data = json.loads(resp.choices[0].message.content)
-            url = data.get("url")
-            if url and url.startswith("http"):
-                return url.rstrip("/")
+            if data.get("url") and str(data["url"]).startswith("http"):
+                result["url"] = str(data["url"]).rstrip("/")
+            if data.get("industry"):
+                result["industry"] = str(data["industry"])
+            if data.get("city"):
+                result["city"] = str(data["city"])
+            return result
         except Exception:
             pass
     if "anthropic" in api_keys:
         try:
-            import anthropic as _anthropic
+            import anthropic as _anthropic, re
             client = _anthropic.Anthropic(api_key=api_keys["anthropic"])
             resp = client.messages.create(
-                model="claude-sonnet-4-6", max_tokens=100,
-                messages=[{"role": "user", "content": f'Return ONLY a JSON object with the official website URL for "{business_name}": {{"url": "https://..."}}. If unknown: {{"url": null}}'}])
+                model="claude-sonnet-4-6", max_tokens=200,
+                messages=[{"role": "user", "content": prompt + "\n\nReturn ONLY the JSON object, no other text."}])
             import json
             text = resp.content[0].text.strip()
-            # Extract JSON from response
-            match = re.search(r'\{[^}]+\}', text)
+            match = re.search(r'\{[^}]*\}', text, re.DOTALL)
             if match:
                 data = json.loads(match.group())
-                url = data.get("url")
-                if url and url.startswith("http"):
-                    return url.rstrip("/")
+                if data.get("url") and str(data["url"]).startswith("http"):
+                    result["url"] = str(data["url"]).rstrip("/")
+                if data.get("industry"):
+                    result["industry"] = str(data["industry"])
+                if data.get("city"):
+                    result["city"] = str(data["city"])
+            return result
         except Exception:
             pass
-    return None
+    return result
 
 
 # ─── API Endpoints ────────────────────────────────────────────────────
@@ -291,24 +306,32 @@ async def run_audit(req: AuditRequest):
         )
         return build_audit_ui_response(audit_run)
 
-    # Auto-discover website if not provided
+    # Auto-discover missing fields (website, industry, city)
     website_url = req.website_url
-    if not website_url:
-        website_url = _discover_website(req.business_name, api_keys)
+    industry = req.industry
+    city = req.city
+    if not website_url or not industry or not city:
+        discovered = _discover_business(req.business_name, api_keys)
+        if not website_url:
+            website_url = discovered.get("url")
+        if not industry:
+            industry = discovered.get("industry") or ""
+        if not city:
+            city = discovered.get("city") or ""
 
     # Live audit
     loop = asyncio.get_event_loop()
     llm_results, web_results = await loop.run_in_executor(
         executor, run_live_audit,
-        req.business_name, req.industry, req.city,
+        req.business_name, industry, city,
         website_url, req.phone, api_keys
     )
 
     audit_run = build_audit_run(
         mode="live",
         business_name=req.business_name,
-        industry=req.industry,
-        city=req.city,
+        industry=industry,
+        city=city,
         website_url=website_url,
         phone=req.phone,
         web_presence=web_results,
