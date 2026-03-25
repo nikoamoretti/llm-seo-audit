@@ -293,11 +293,8 @@ async def run_audit(req: AuditRequest):
 
     # Auto-discover website if not provided
     website_url = req.website_url
-    print(f"[AUDIT] req.website_url={repr(req.website_url)}", flush=True)
     if not website_url:
-        print(f"[AUDIT] Running discovery...", flush=True)
         website_url = _discover_website(req.business_name, api_keys)
-        print(f"[AUDIT] Discovery returned: {repr(website_url)}", flush=True)
 
     # Live audit
     loop = asyncio.get_event_loop()
