@@ -371,6 +371,7 @@ async def run_audit(req: AuditRequest):
                         model="claude-sonnet-4-20250514", max_tokens=50,
                         messages=[{"role": "user", "content": prompt}])
                     url = resp.content[0].text.strip().split()[0]
+                print(f"[DISCOVER] {provider} returned: {repr(url)}", flush=True)
                 if url.startswith("http") and "." in url and len(url) < 100:
                     website_url = url.rstrip("/")
             except Exception as e:
