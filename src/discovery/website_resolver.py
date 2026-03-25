@@ -116,13 +116,13 @@ def resolve_website(
         if result is not None:
             return result
 
-    # Strategy 3: DuckDuckGo search
-    result = _try_duckduckgo(business_name, city)
+    # Strategy 3: Heuristic {slug}.com — fast, high confidence when it matches
+    result = _try_heuristic(business_name)
     if result is not None:
         return result
 
-    # Strategy 4: Heuristic {slug}.com
-    result = _try_heuristic(business_name)
+    # Strategy 4: DuckDuckGo search — broader but noisier
+    result = _try_duckduckgo(business_name, city)
     if result is not None:
         return result
 
@@ -253,7 +253,11 @@ def _try_duckduckgo(
         candidate_urls = _extract_ddg_urls(resp.text)
         logger.info("DuckDuckGo returned %d candidate URLs.", len(candidate_urls))
 
-        for url in candidate_urls[:10]:  # Limit to top 10 candidates
+        name_slug = re.sub(r"[^a-z0-9]", "", business_name.lower())
+
+        # Score and sort candidates: prefer domains that contain the business name
+        scored: list[tuple[int, str]] = []
+        for url in candidate_urls[:10]:
             parsed = urlparse(url)
             domain = parsed.netloc.lower().lstrip("www.")
 
@@ -262,14 +266,31 @@ def _try_duckduckgo(
                 logger.debug("Skipping directory/social URL: %s", url)
                 continue
 
-            # Validate URL is reachable and title matches
+            # Skip obvious news/media domains
+            if any(kw in domain for kw in ("news", "blog", "article", "press", "media", "wiki")):
+                logger.debug("Skipping news/media URL: %s", url)
+                continue
+
+            # Score: domain contains business name slug → much higher priority
+            domain_base = domain.split(".")[0]
+            score = 2 if name_slug and name_slug in domain_base else 0
+            scored.append((score, url))
+
+        # Sort by score descending, then try each
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        for _, url in scored:
             if _validate_url_with_title_match(url, business_name):
-                logger.info("DuckDuckGo match: %r", url)
+                parsed = urlparse(url)
+                domain_base = parsed.netloc.lower().lstrip("www.").split(".")[0]
+                domain_match = name_slug and name_slug in domain_base
+                confidence = 0.85 if domain_match else 0.65
+                logger.info("DuckDuckGo match: %r (domain_match=%s)", url, domain_match)
                 return WebsiteResolution(
                     url=url,
                     status="verified_candidate",
                     source="duckduckgo",
-                    confidence=0.8,
+                    confidence=confidence,
                     notes=f"Found via DuckDuckGo search; page title matches business name.",
                 )
     except Exception as exc:

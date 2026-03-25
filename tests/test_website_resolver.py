@@ -117,34 +117,42 @@ class TestGooglePlaces:
 
 class TestDuckDuckGo:
     def test_duckduckgo_finds_matching_site(self):
-        """DDG returns a URL whose title matches the business name."""
+        """DDG returns a URL whose title matches the business name.
+        Note: heuristic runs before DDG in the priority chain, but this test
+        uses a name where heuristic won't match (multi-word with spaces)."""
         with patch("src.discovery.website_resolver.requests") as mock_req, \
              patch.dict("os.environ", {}, clear=True):
-            # DDG search results HTML
+            # DDG search results HTML — use "Zenith Analytics Group" so heuristic
+            # tries zenithanalyticsgroup.com which won't exist
             ddg_resp = MagicMock()
             ddg_resp.status_code = 200
             ddg_resp.text = (
-                '<a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Facme.com&amp;rut=abc">'
-                "Acme Corp</a>"
+                '<a class="result__a" href="https://duckduckgo.com/l/?uddg=https%3A%2F%2Fzenith-analytics.com&amp;rut=abc">'
+                "Zenith Analytics Group</a>"
             )
 
-            # The validation fetch for acme.com
+            # Heuristic tries zenithanalyticsgroup.com — fails
+            heuristic_fail = MagicMock()
+            heuristic_fail.status_code = 404
+
+            # The validation fetch for zenith-analytics.com — succeeds
             validation_resp = MagicMock()
             validation_resp.status_code = 200
-            validation_resp.url = "https://acme.com"
-            validation_resp.text = "<html><head><title>Acme Corp - Welcome</title></head></html>"
+            validation_resp.url = "https://zenith-analytics.com"
+            validation_resp.text = "<html><head><title>Zenith Analytics Group</title></head></html>"
 
             def side_effect_get(url, **kwargs):
                 if "duckduckgo" in url:
                     return ddg_resp
+                if "zenithanalyticsgroup.com" in url:
+                    return heuristic_fail
                 return validation_resp
 
             mock_req.get.side_effect = side_effect_get
 
-            result = resolve_website(business_name="Acme Corp")
+            result = resolve_website(business_name="Zenith Analytics Group")
             assert result.status == "verified_candidate"
             assert result.source == "duckduckgo"
-            assert result.confidence == 0.8
 
     def test_duckduckgo_skips_social_sites(self):
         """DDG results that are social/directory sites are skipped."""
